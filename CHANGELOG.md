@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-05-03
+
+### Fixed
+
+- **PyInstaller binary crash**: fixed `ImportError: attempted relative import with no known parent package` by adding a top-level `cli.py` entry point with absolute imports for the binary build. Added explicit `--hidden-import` flags for all submodules (including lazy imports inside functions).
+- Build script (`build.py`) now uses `cli.py` as entry point instead of `outlook_cli/main.py`.
+
 ## [1.0.0] - 2026-05-03
 
 Initial release of outlook-cli for Microsoft Exchange.
@@ -40,5 +47,6 @@ Initial release of outlook-cli for Microsoft Exchange.
 - SKILL.md with complete command reference and usage patterns.
 - SECURITY.md with vulnerability reporting and credential handling design.
 
-[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fatecannotbealtered/outlook-cli/releases/tag/v1.0.0

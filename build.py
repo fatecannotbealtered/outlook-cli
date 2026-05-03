@@ -12,9 +12,9 @@ from pathlib import Path
 
 
 def main():
-    entry = Path("outlook_cli/main.py")
+    entry = Path("cli.py")
     if not entry.exists():
-        print("Error: outlook_cli/main.py not found. Run from project root.")
+        print("Error: cli.py not found. Run from project root.")
         sys.exit(1)
 
     name = "outlook-cli"
@@ -27,6 +27,27 @@ def main():
         "--name", name,
         "--clean",
         "--noconfirm",
+        # Explicitly collect the whole package so PyInstaller doesn't
+        # miss submodules that are only imported lazily (inside functions).
+        "--hidden-import", "outlook_cli",
+        "--hidden-import", "outlook_cli.main",
+        "--hidden-import", "outlook_cli.config",
+        "--hidden-import", "outlook_cli.exchange",
+        "--hidden-import", "outlook_cli.output",
+        "--hidden-import", "outlook_cli.audit",
+        "--hidden-import", "outlook_cli.crypto",
+        "--hidden-import", "outlook_cli.commands",
+        "--hidden-import", "outlook_cli.commands.mail",
+        "--hidden-import", "outlook_cli.commands.cal",
+        "--hidden-import", "outlook_cli.commands.folders",
+        "--hidden-import", "outlook_cli.commands.rules",
+        "--hidden-import", "outlook_cli.commands.tools",
+        "--hidden-import", "outlook_cli.commands.setup",
+        # exchangelib and its dynamic submodules
+        "--hidden-import", "exchangelib",
+        "--hidden-import", "exchangelib.items",
+        "--hidden-import", "exchangelib.properties",
+        "--hidden-import", "exchangelib.protocol",
         str(entry),
     ]
 
