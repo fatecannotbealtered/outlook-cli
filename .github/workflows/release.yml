@@ -1,0 +1,136 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+      - name: Run tests
+        run: pytest tests/ -v --tb=short
+
+  build:
+    needs: test
+    strategy:
+      matrix:
+        include:
+          - os: windows-latest
+            platform: windows
+            arch: amd64
+          - os: macos-latest
+            platform: darwin
+            arch: amd64
+          - os: macos-14
+            platform: darwin
+            arch: arm64
+          - os: ubuntu-latest
+            platform: linux
+            arch: amd64
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Get version from tag
+        id: version
+        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        shell: bash
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Build binary
+        run: python build.py
+
+      - name: Package binary (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          VERSION=${{ steps.version.outputs.VERSION }}
+          PLATFORM=${{ matrix.platform }}
+          ARCH=${{ matrix.arch }}
+          ARCHIVE="outlook-cli-${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
+          cd dist
+          tar -czf "${ARCHIVE}" outlook-cli
+          sha256sum "${ARCHIVE}" >> ../checksums.txt
+
+      - name: Package binary (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $version = "${{ steps.version.outputs.VERSION }}"
+          $platform = "${{ matrix.platform }}"
+          $arch = "${{ matrix.arch }}"
+          $archive = "outlook-cli-${version}-${platform}-${arch}.zip"
+          cd dist
+          Compress-Archive -Path "outlook-cli.exe" -DestinationPath $archive
+          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash
+          "$hash  $archive" | Out-File -Append -FilePath "../checksums.txt" -Encoding utf8
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: outlook-cli-${{ matrix.platform }}-${{ matrix.arch }}
+          path: |
+            dist/outlook-cli-*-${{ matrix.platform }}-${{ matrix.arch }}*
+            checksums.txt
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release
+          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" \) -exec cp {} release/ \;
+          # Merge all checksum files
+          cat artifacts/*/checksums.txt 2>/dev/null | sort -u > release/checksums.txt || true
+          ls -la release/
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: release/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+
+  npm-publish:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Publish to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
