@@ -70,7 +70,7 @@ jobs:
           ARCHIVE="outlook-cli-${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
           cd dist
           tar -czf "${ARCHIVE}" outlook-cli
-          sha256sum "${ARCHIVE}" >> ../checksums.txt
+          shasum -a 256 "${ARCHIVE}" >> ../checksums.txt
 
       - name: Package binary (Windows)
         if: runner.os == 'Windows'
