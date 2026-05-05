@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-05-06
+
+### Fixed
+
+- **search/list ID usable with read**: `find_mail_by_id` now looks up by Exchange ItemId (`.get()`) first, then falls back to MIME `message_id` filter. search → read workflow works end-to-end.
+- **Preview length**: `email_to_dict` preview increased from 200 to 500 characters.
+- **NOT_FOUND hint**: added troubleshooting direction for ID-related failures.
+
 ## [1.0.2] - 2026-05-06
 
 ### Security
@@ -98,7 +106,8 @@ Initial release of outlook-cli for Microsoft Exchange.
 - SKILL.md with complete command reference and usage patterns.
 - SECURITY.md with vulnerability reporting and credential handling design.
 
-[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.2...HEAD
+[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.3...HEAD
+[1.0.3]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fatecannotbealtered/outlook-cli/releases/tag/v1.0.0

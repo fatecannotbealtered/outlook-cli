@@ -183,16 +183,30 @@ def resolve_folder(account, folder_path: str):
     return folder
 
 
-def find_mail_by_id(account, message_id: str):
-    """Search for a mail by ItemId across common folders.
+def find_mail_by_id(account, mail_id: str):
+    """Search for a mail by Exchange ItemId or MIME Message-ID.
 
-    Uses iterative BFS with depth limit instead of unbounded recursion.
+    Lookup order:
+      1. Direct .get() by Exchange ItemId (fastest)
+      2. Filter by MIME message_id field (backward compat)
+      3. BFS folder scan comparing ItemId strings
     """
-    # First try inbox directly (most common case)
-    for item in account.inbox.filter(message_id=message_id):
-        return item
+    # Method 1: Direct .get() — works with Exchange ItemId
+    try:
+        item = account.inbox.get(id=mail_id)
+        if item:
+            return item
+    except Exception:
+        pass
 
-    # BFS across all folders with depth limit
+    # Method 2: Filter by MIME message_id (for legacy MIME IDs)
+    try:
+        for item in account.inbox.filter(message_id=mail_id):
+            return item
+    except Exception:
+        pass
+
+    # Method 3: BFS across all folders
     root = account.inbox.parent
     queue = deque()
     try:
@@ -212,7 +226,15 @@ def find_mail_by_id(account, message_id: str):
         visited.add(folder_id)
 
         try:
-            for item in folder.filter(message_id=message_id):
+            # Try direct get
+            item = folder.get(id=mail_id)
+            if item:
+                return item
+        except Exception:
+            pass
+        try:
+            # Try MIME message_id filter
+            for item in folder.filter(message_id=mail_id):
                 return item
         except Exception:
             pass
@@ -241,7 +263,7 @@ def strip_re_fwd(subject: str, prefix: str) -> str:
     return f"{prefix} {subject}"
 
 
-def email_to_dict(item, preview_len: int = 200) -> dict:
+def email_to_dict(item, preview_len: int = 500) -> dict:
     """Convert an exchangelib Message to a flat dict."""
     sender = item.sender.email_address if item.sender else "unknown"
     to_list = [m.email_address for m in (item.to_recipients or [])]

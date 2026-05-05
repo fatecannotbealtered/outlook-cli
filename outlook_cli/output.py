@@ -33,7 +33,7 @@ ERROR_CODES = {
     "CONFIG_ERROR": "Run 'outlook-cli setup login' to configure credentials",
     "AUTH_REQUIRED": "Check OUTLOOK_EMAIL and OUTLOOK_PASSWORD env vars",
     "FORBIDDEN": "Check permissions in ~/.outlook-cli/config.json",
-    "NOT_FOUND": "Verify the resource ID (from list/search results)",
+    "NOT_FOUND": "Verify the resource ID (from list/search results). The ID may have changed if the item was moved or deleted.",
     "VALIDATION_ERROR": "Check command arguments",
     "SERVER_ERROR": "Exchange server error, try again later",
     "NETWORK_ERROR": "Check network and OUTLOOK_SERVER config",

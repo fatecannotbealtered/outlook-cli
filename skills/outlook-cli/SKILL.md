@@ -1,6 +1,6 @@
 ---
 name: outlook-cli
-version: "1.0.2"
+version: "1.0.3"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, and contacts. Atomic commands for AI Agents."
 license: MIT
 user-invocable: true
