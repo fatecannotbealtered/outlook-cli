@@ -35,7 +35,7 @@ def log(cmd_path: str, args: list, exit_code: int, duration_ms: int) -> None:
     except OSError:
         return
 
-    _cleanup(d)
+    _maybe_cleanup(d)
 
     entry = {
         "ts": datetime.now().astimezone().isoformat(),
@@ -69,18 +69,40 @@ def files() -> list:
 
 
 def _sanitize_args(args: list) -> list:
-    """Remove sensitive flag values."""
+    """Remove sensitive flag values. Handles both '--flag value' and '--flag=value'."""
     out = []
     skip = False
     for a in args:
         if skip:
             skip = False
             continue
+        # Handle --flag=value form
+        if "=" in a:
+            flag_part = a.split("=", 1)[0]
+            if flag_part.lower() in _SENSITIVE_FLAGS:
+                out.append(f"{flag_part}=***")
+                continue
+        # Handle --flag value form
         if a.lower() in _SENSITIVE_FLAGS:
             skip = True
+            out.append(a)
             continue
         out.append(a)
     return out
+
+
+# Track last cleanup to avoid running it on every log() call
+_last_cleanup_month: str = ""
+
+
+def _maybe_cleanup(d: Path) -> None:
+    """Remove expired audit files, at most once per month."""
+    global _last_cleanup_month
+    current_month = time.strftime("%Y-%m")
+    if _last_cleanup_month == current_month:
+        return
+    _last_cleanup_month = current_month
+    _cleanup(d)
 
 
 def _cleanup(d: Path) -> None:
@@ -89,11 +111,14 @@ def _cleanup(d: Path) -> None:
     if months == 0:
         return
 
-    cutoff = datetime.now().strftime("%Y-%m")  # simplified
-    # Calculate cutoff date
-    from datetime import timedelta
-    cutoff_dt = datetime.now() - timedelta(days=months * 30)
-    cutoff = cutoff_dt.strftime("%Y-%m")
+    # Calculate cutoff by subtracting months
+    now = datetime.now()
+    cutoff_year = now.year
+    cutoff_month = now.month - months
+    while cutoff_month <= 0:
+        cutoff_month += 12
+        cutoff_year -= 1
+    cutoff = f"{cutoff_year:04d}-{cutoff_month:02d}"
 
     try:
         for p in d.glob("audit-*.jsonl"):

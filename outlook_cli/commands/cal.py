@@ -21,7 +21,8 @@ def _parse_dt(s, field_name="time"):
     except ValueError:
         output.handle_error(
             f"{field_name} format error, use YYYY-MM-DD HH:MM, got: {s}",
-            "VALIDATION_ERROR", exit_code=2,
+            "VALIDATION_ERROR",
+            exit_code=2,
         )
 
 
@@ -29,17 +30,21 @@ def _event_to_dict(item):
     """Convert CalendarItem to dict."""
     attendees = []
     for att in item.required_attendees or []:
-        attendees.append({
-            "email": att.mailbox.email_address if att.mailbox else "",
-            "response": att.response_type or "unknown",
-            "optional": False,
-        })
+        attendees.append(
+            {
+                "email": att.mailbox.email_address if att.mailbox else "",
+                "response": att.response_type or "unknown",
+                "optional": False,
+            }
+        )
     for att in item.optional_attendees or []:
-        attendees.append({
-            "email": att.mailbox.email_address if att.mailbox else "",
-            "response": att.response_type or "unknown",
-            "optional": True,
-        })
+        attendees.append(
+            {
+                "email": att.mailbox.email_address if att.mailbox else "",
+                "response": att.response_type or "unknown",
+                "optional": True,
+            }
+        )
 
     item_id = item.id.id if hasattr(item.id, "id") else str(item.id)
     changekey = item.id.changekey if hasattr(item.id, "changekey") else ""
@@ -61,7 +66,6 @@ def _get_event(account, event_id, changekey=""):
     """Get calendar event by ItemId. Falls back to scanning recent events."""
     from exchangelib import ItemId
 
-    # Method 1: Direct .get() — most reliable, returns item with valid changekey
     try:
         item = account.calendar.get(id=event_id)
         if item:
@@ -69,7 +73,6 @@ def _get_event(account, event_id, changekey=""):
     except Exception:
         pass
 
-    # Method 2: get_items with explicit changekey
     if changekey:
         try:
             eid = ItemId(id=event_id, changekey=changekey)
@@ -79,7 +82,6 @@ def _get_event(account, event_id, changekey=""):
         except Exception:
             pass
 
-    # Method 3: Scan calendar view (slowest fallback)
     try:
         now = datetime.now(timezone.utc)
         start = now - timedelta(days=365)
@@ -104,6 +106,7 @@ def _get_event(account, event_id, changekey=""):
 def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
     """List calendar events."""
     from ..config import check_permission
+
     check_permission("cal list")
 
     account = get_account()
@@ -121,7 +124,9 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
     end = localize_dt(end_dt, tz)
 
     try:
-        events = [_event_to_dict(item) for item in account.calendar.view(start=start, end=end)]
+        events = [
+            _event_to_dict(item) for item in account.calendar.view(start=start, end=end)
+        ]
     except Exception as e:
         output.handle_error(f"Calendar query failed: {e}", "SERVER_ERROR", exit_code=7)
 
@@ -130,7 +135,7 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
         events = [e for e in events if kw in e["subject"].lower()]
 
     total = len(events)
-    page = events[offset:offset + limit + 1]
+    page = events[offset : offset + limit + 1]
     has_more = len(page) > limit
     page = page[:limit]
 
@@ -147,9 +152,9 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
         output.print_json(data)
     else:
         for e in page:
-            time_str = f"{e['start']} ~ {e['end']}" if e['end'] else e['start']
+            time_str = f"{e['start']} ~ {e['end']}" if e["end"] else e["start"]
             output.info(f"  [{e['id'][:8]}] {time_str}  {e['subject']}")
-            if e['location']:
+            if e["location"]:
                 output.gray(f"    Location: {e['location']}")
         output.info(f"--- {len(page)} / {total} events ---")
 
@@ -161,24 +166,60 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
 @click.option("--attendees", default=None, help="Comma-separated email addresses")
 @click.option("--location", default=None, help="Event location")
 @click.option("--body", default=None, help="Event body text")
-@click.option("--recurrence", type=click.Choice(["daily", "weekly", "monthly"]), default=None,
-              help="Recurrence pattern")
-@click.option("--recurrence-interval", default=1, type=int, help="Recurrence interval (default 1)")
+@click.option(
+    "--recurrence",
+    type=click.Choice(["daily", "weekly", "monthly"]),
+    default=None,
+    help="Recurrence pattern",
+)
+@click.option(
+    "--recurrence-interval", default=1, type=int, help="Recurrence interval (default 1)"
+)
 @click.option("--recurrence-end", default=None, help="Recurrence end date YYYY-MM-DD")
-@click.option("--recurrence-count", default=None, type=int, help="Number of occurrences")
+@click.option(
+    "--recurrence-count", default=None, type=int, help="Number of occurrences"
+)
+@click.option("--preview", is_flag=True, help="Preview without creating")
+@click.option(
+    "--send",
+    "do_send",
+    is_flag=True,
+    help="Confirm creation (required when attendees are present)",
+)
 @click.pass_context
-def cal_create(ctx, subject, start, end, attendees, location, body,
-               recurrence, recurrence_interval, recurrence_end, recurrence_count):
-    """Create a calendar event."""
+def cal_create(
+    ctx,
+    subject,
+    start,
+    end,
+    attendees,
+    location,
+    body,
+    recurrence,
+    recurrence_interval,
+    recurrence_end,
+    recurrence_count,
+    preview,
+    do_send,
+):
+    """Create a calendar event. Requires --preview or --send when attendees are present."""
     from ..config import check_permission
+
     check_permission("cal create")
 
     from exchangelib import CalendarItem, Mailbox, Attendee
+
     account = get_account()
     tz = get_tz()
 
     start_dt = _parse_dt(start, "start time")
     end_dt = _parse_dt(end, "end time")
+
+    if end_dt <= start_dt:
+        output.handle_error(
+            "End time must be after start time", "VALIDATION_ERROR", exit_code=2
+        )
+
     start_local = localize_dt(start_dt, tz)
     end_local = localize_dt(end_dt, tz)
 
@@ -186,15 +227,31 @@ def cal_create(ctx, subject, start, end, attendees, location, body,
     if attendees:
         attendee_list = [
             Attendee(mailbox=Mailbox(email_address=e.strip()), response_type="Accept")
-            for e in attendees.split(",") if e.strip()
+            for e in attendees.split(",")
+            if e.strip()
         ]
+
+    # Require --preview or --send when attendees are present (irreversible: sends invitations)
+    if attendee_list and not preview and not do_send:
+        output.handle_error(
+            "Creating events with attendees requires --preview or --send "
+            "(invitations will be sent to all attendees)",
+            "VALIDATION_ERROR",
+            exit_code=2,
+        )
 
     recurrence_obj = None
     if recurrence:
         from exchangelib.recurrence import (
-            Recurrence, DailyPattern, WeeklyPattern, MonthlyPattern,
-            NoEndDatePattern, EndDatePattern, NumberedPattern,
+            Recurrence,
+            DailyPattern,
+            WeeklyPattern,
+            MonthlyPattern,
+            NoEndDatePattern,
+            EndDatePattern,
+            NumberedPattern,
         )
+
         pattern_map = {
             "daily": DailyPattern(interval=recurrence_interval),
             "weekly": WeeklyPattern(interval=recurrence_interval),
@@ -212,17 +269,20 @@ def cal_create(ctx, subject, start, end, attendees, location, body,
 
         recurrence_obj = Recurrence(pattern=pattern, range=range_)
 
-    if ctx.obj.get("dry_run"):
-        preview = {
-            "subject": subject, "start": start, "end": end,
-            "location": location or "", "recurrence": recurrence,
+    if preview or ctx.obj.get("dry_run"):
+        preview_data = {
+            "subject": subject,
+            "start": start,
+            "end": end,
+            "location": location or "",
+            "recurrence": recurrence,
             "attendees": [a.mailbox.email_address for a in (attendee_list or [])],
         }
         if output.is_json():
-            output.print_json({"dry_run": True, "preview": preview})
+            output.print_json({"dry_run": True, "preview": preview_data})
         else:
             output.info("[DRY RUN] Would create event:")
-            for k, v in preview.items():
+            for k, v in preview_data.items():
                 output.info(f"  {k}: {v}")
         return
 
@@ -238,7 +298,9 @@ def cal_create(ctx, subject, start, end, attendees, location, body,
         recurrence=recurrence_obj,
     )
     event.save(
-        send_meeting_invitations="SendToAllAndSaveCopy" if attendee_list else "SendToNone",
+        send_meeting_invitations="SendToAllAndSaveCopy"
+        if attendee_list
+        else "SendToNone",
     )
 
     data = {
@@ -257,20 +319,45 @@ def cal_create(ctx, subject, start, end, attendees, location, body,
 
 @cal_group.command("update")
 @click.option("--id", "event_id", required=True, help="Event ID from cal list")
-@click.option("--changekey", default="", help="Changekey (from cal list, improves lookup)")
+@click.option(
+    "--changekey", default="", help="Changekey (from cal list, improves lookup)"
+)
 @click.option("--subject", default=None)
 @click.option("--start", default=None, help="Start time YYYY-MM-DD HH:MM")
 @click.option("--end", default=None, help="End time YYYY-MM-DD HH:MM")
-@click.option("--attendees", default=None, help="Comma-separated emails (replaces existing)")
+@click.option(
+    "--attendees", default=None, help="Comma-separated emails (replaces existing)"
+)
 @click.option("--location", default=None)
 @click.option("--body", default=None)
+@click.option("--preview", is_flag=True, help="Preview without updating")
+@click.option(
+    "--send",
+    "do_send",
+    is_flag=True,
+    help="Confirm update (required when attendees present)",
+)
 @click.pass_context
-def cal_update(ctx, event_id, changekey, subject, start, end, attendees, location, body):
-    """Update an existing calendar event."""
+def cal_update(
+    ctx,
+    event_id,
+    changekey,
+    subject,
+    start,
+    end,
+    attendees,
+    location,
+    body,
+    preview,
+    do_send,
+):
+    """Update an existing calendar event. Requires --preview/--send when attendees present."""
     from ..config import check_permission
+
     check_permission("cal update")
 
     from exchangelib import Mailbox, Attendee
+
     account = get_account()
     tz = get_tz()
 
@@ -298,23 +385,53 @@ def cal_update(ctx, event_id, changekey, subject, start, end, attendees, locatio
     if attendees is not None:
         item.required_attendees = [
             Attendee(mailbox=Mailbox(email_address=e.strip()), response_type="Accept")
-            for e in attendees.split(",") if e.strip()
+            for e in attendees.split(",")
+            if e.strip()
         ] or None
         update_fields.append("required_attendees")
 
     if not update_fields:
-        output.handle_error("At least one field to update is required", "VALIDATION_ERROR", exit_code=2)
+        output.handle_error(
+            "At least one field to update is required", "VALIDATION_ERROR", exit_code=2
+        )
 
     has_attendees = bool(item.required_attendees or item.optional_attendees)
+
+    # Require --preview/--send when attendees are present (sends update notifications)
+    if has_attendees and not preview and not do_send:
+        output.handle_error(
+            "Updating events with attendees requires --preview or --send "
+            "(update notifications will be sent)",
+            "VALIDATION_ERROR",
+            exit_code=2,
+        )
+
+    if preview or ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Update event",
+            {
+                "id": event_id,
+                "updated_fields": update_fields,
+                "has_attendees": has_attendees,
+            },
+        )
+        return
+
     try:
         item.save(
             update_fields=update_fields,
-            send_meeting_invitations="SendToAllAndSaveCopy" if has_attendees else "SendToNone",
+            send_meeting_invitations="SendToAllAndSaveCopy"
+            if has_attendees
+            else "SendToNone",
         )
     except Exception as e:
         output.handle_api_error(e)
 
-    data = {"message": "Event updated", "updated_fields": update_fields, "event": _event_to_dict(item)}
+    data = {
+        "message": "Event updated",
+        "updated_fields": update_fields,
+        "event": _event_to_dict(item),
+    }
 
     if output.is_json():
         output.print_json(data)
@@ -328,10 +445,15 @@ def cal_update(ctx, event_id, changekey, subject, start, end, attendees, locatio
 @click.option("--id", "event_id", required=True, help="Event ID")
 @click.option("--changekey", default="", help="Changekey (improves lookup)")
 @click.option("--force", is_flag=True, help="Skip confirmation")
+@click.option("--preview", is_flag=True, help="Preview without deleting")
+@click.option(
+    "--send", "do_send", is_flag=True, help="Confirm deletion (sends cancellation)"
+)
 @click.pass_context
-def cal_delete(ctx, event_id, changekey, force):
+def cal_delete(ctx, event_id, changekey, force, preview, do_send):
     """Delete a calendar event (sends cancellation to attendees)."""
     from ..config import check_permission
+
     check_permission("cal delete")
 
     account = get_account()
@@ -339,11 +461,37 @@ def cal_delete(ctx, event_id, changekey, force):
     if not item:
         output.handle_error(f"Event not found: {event_id}", "NOT_FOUND", exit_code=4)
 
-    if not force and not output.is_json():
+    has_attendees = bool(item.required_attendees or item.optional_attendees)
+
+    # Require --preview/--send when attendees present (sends cancellation)
+    if has_attendees and not preview and not do_send:
+        output.handle_error(
+            "Deleting events with attendees requires --preview or --send "
+            "(cancellation notices will be sent)",
+            "VALIDATION_ERROR",
+            exit_code=2,
+        )
+
+    if not force and not output.is_json() and not preview:
         click.confirm(f"Delete event '{item.subject}'?", abort=True)
 
+    if preview or ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Delete event",
+            {
+                "id": event_id,
+                "subject": item.subject,
+                "has_attendees": has_attendees,
+            },
+        )
+        return
+
     subject = item.subject
-    item.delete(send_meeting_cancellations="SendToAllAndSaveCopy")
+    item.delete(
+        send_meeting_cancellations="SendToAllAndSaveCopy"
+        if has_attendees
+        else "SendToNone"
+    )
 
     data = {"message": "Event deleted", "subject": subject}
     if output.is_json():

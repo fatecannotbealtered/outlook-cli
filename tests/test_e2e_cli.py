@@ -10,7 +10,6 @@ import subprocess
 import sys
 
 
-
 def run_cli(*args, env_overrides=None):
     """Run outlook-cli and return (exit_code, stdout, stderr)."""
     env = os.environ.copy()
@@ -60,8 +59,19 @@ class TestCLIHelp:
     def test_mail_help(self):
         code, stdout, _ = run_cli("mail", "--help")
         assert code == 0
-        for cmd in ["list", "search", "read", "send", "reply", "forward",
-                     "delete", "move", "mark", "flag", "drafts"]:
+        for cmd in [
+            "list",
+            "search",
+            "read",
+            "send",
+            "reply",
+            "forward",
+            "delete",
+            "move",
+            "mark",
+            "flag",
+            "drafts",
+        ]:
             assert cmd in stdout, f"mail {cmd} not in help"
 
     def test_cal_help(self):
@@ -155,8 +165,15 @@ class TestPermissionEnforcement:
 
     def test_read_only_blocks_send(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "send",
-            "--to", "test@test.com", "--subject", "Hi", "--body", "Hello",
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
             "--preview",
             env_overrides=self._env_with_mode("read-only"),
         )
@@ -165,8 +182,14 @@ class TestPermissionEnforcement:
 
     def test_read_only_blocks_reply(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "reply",
-            "--id", "fake-id", "--body", "Hi", "--preview",
+            "--json",
+            "mail",
+            "reply",
+            "--id",
+            "fake-id",
+            "--body",
+            "Hi",
+            "--preview",
             env_overrides=self._env_with_mode("read-only"),
         )
         assert code == 5
@@ -174,7 +197,11 @@ class TestPermissionEnforcement:
 
     def test_read_only_blocks_delete(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "delete", "--id", "fake-id",
+            "--json",
+            "mail",
+            "delete",
+            "--id",
+            "fake-id",
             env_overrides=self._env_with_mode("read-only"),
         )
         assert code == 5
@@ -182,9 +209,15 @@ class TestPermissionEnforcement:
 
     def test_read_only_blocks_cal_create(self):
         code, _, stderr = run_cli(
-            "--json", "cal", "create",
-            "--subject", "Test", "--start", "2026-05-01 10:00",
-            "--end", "2026-05-01 11:00",
+            "--json",
+            "cal",
+            "create",
+            "--subject",
+            "Test",
+            "--start",
+            "2026-05-01 10:00",
+            "--end",
+            "2026-05-01 11:00",
             env_overrides=self._env_with_mode("read-only"),
         )
         assert code == 5
@@ -192,7 +225,13 @@ class TestPermissionEnforcement:
     def test_write_allows_move(self):
         """Write permission allows move (will fail on connection, not permission)."""
         code, _, stderr = run_cli(
-            "--json", "mail", "move", "--id", "fake-id", "--folder", "Archive",
+            "--json",
+            "mail",
+            "move",
+            "--id",
+            "fake-id",
+            "--folder",
+            "Archive",
             env_overrides=self._env_with_mode("write"),
         )
         # Should NOT be exit 5 (permission denied)
@@ -201,8 +240,15 @@ class TestPermissionEnforcement:
 
     def test_write_blocks_send(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "send",
-            "--to", "test@test.com", "--subject", "Hi", "--body", "Hello",
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
             "--preview",
             env_overrides=self._env_with_mode("write"),
         )
@@ -211,8 +257,15 @@ class TestPermissionEnforcement:
     def test_full_allows_send_preview(self):
         """Full permission allows send (will fail on connection, not permission)."""
         code, _, stderr = run_cli(
-            "--json", "mail", "send",
-            "--to", "test@test.com", "--subject", "Hi", "--body", "Hello",
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
             "--preview",
             env_overrides=self._env_with_mode("full"),
         )
@@ -228,32 +281,55 @@ class TestSendSafety:
 
     def test_send_without_flag_rejected(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "send",
-            "--to", "test@test.com", "--subject", "Hi", "--body", "Hello",
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
             env_overrides=self._env_full(),
         )
         assert code == 2
-        assert "VALIDATION_ERROR" in stderr or "--preview" in stderr or "--send" in stderr
+        assert (
+            "VALIDATION_ERROR" in stderr or "--preview" in stderr or "--send" in stderr
+        )
 
     def test_reply_without_flag_rejected(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "reply",
-            "--id", "fake-id", "--body", "Hi",
+            "--json",
+            "mail",
+            "reply",
+            "--id",
+            "fake-id",
+            "--body",
+            "Hi",
             env_overrides=self._env_full(),
         )
         assert code == 2
 
     def test_forward_without_flag_rejected(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "forward",
-            "--id", "fake-id", "--to", "test@test.com",
+            "--json",
+            "mail",
+            "forward",
+            "--id",
+            "fake-id",
+            "--to",
+            "test@test.com",
             env_overrides=self._env_full(),
         )
         assert code == 2
 
     def test_draft_send_without_flag_rejected(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "draft-send", "--id", "fake-id",
+            "--json",
+            "mail",
+            "draft-send",
+            "--id",
+            "fake-id",
             env_overrides=self._env_full(),
         )
         assert code == 2
@@ -265,9 +341,26 @@ class TestRespondValidation:
     def _env_write(self):
         return {"OUTLOOK_PERMISSIONS": "write"}
 
+    def test_respond_requires_preview_or_send(self):
+        code, _, stderr = run_cli(
+            "--json",
+            "tools",
+            "respond",
+            "--action",
+            "accept",
+            env_overrides=self._env_write(),
+        )
+        assert code == 2
+        assert "preview" in stderr.lower() or "send" in stderr.lower()
+
     def test_respond_requires_id_or_mail_id(self):
         code, _, stderr = run_cli(
-            "--json", "tools", "respond", "--action", "accept",
+            "--json",
+            "tools",
+            "respond",
+            "--action",
+            "accept",
+            "--send",
             env_overrides=self._env_write(),
         )
         assert code == 2
@@ -279,7 +372,9 @@ class TestErrorFormat:
 
     def test_config_error_is_json(self):
         code, _, stderr = run_cli(
-            "--json", "mail", "list",
+            "--json",
+            "mail",
+            "list",
             env_overrides={"OUTLOOK_EMAIL": "", "OUTLOOK_PASSWORD": ""},
         )
         assert code == 3
@@ -301,7 +396,9 @@ class TestMissingArgs:
     """Test that missing required args produce helpful errors."""
 
     def test_send_missing_to(self):
-        code, _, _ = run_cli("mail", "send", "--subject", "Hi", "--body", "Hello", "--preview")
+        code, _, _ = run_cli(
+            "mail", "send", "--subject", "Hi", "--body", "Hello", "--preview"
+        )
         assert code != 0
 
     def test_search_no_args(self):
@@ -310,7 +407,11 @@ class TestMissingArgs:
 
     def test_cal_create_missing_subject(self):
         code, _, _ = run_cli(
-            "cal", "create",
-            "--start", "2026-05-01 10:00", "--end", "2026-05-01 11:00",
+            "cal",
+            "create",
+            "--start",
+            "2026-05-01 10:00",
+            "--end",
+            "2026-05-01 11:00",
         )
         assert code != 0

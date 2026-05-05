@@ -12,9 +12,19 @@ def folders_group():
     pass
 
 
+def _folder_id(folder):
+    """Get folder ID string."""
+    if hasattr(folder, "id") and folder.id:
+        if hasattr(folder.id, "id"):
+            return folder.id.id
+        return str(folder.id)
+    return ""
+
+
 def _folder_to_dict(folder, depth=0, max_depth=3):
     """Convert folder to dict, recursively up to max_depth."""
     result = {
+        "id": _folder_id(folder),
         "name": folder.name,
         "total_count": folder.total_count or 0,
         "unread_count": folder.unread_count or 0,
@@ -58,11 +68,15 @@ def _find_folder(account, path):
 def folders_list(ctx, max_depth):
     """List all mail folders."""
     from ..config import check_permission
+
     check_permission("folders list")
 
     account = get_account()
     try:
-        folders = [_folder_to_dict(f, max_depth=max_depth) for f in account.inbox.parent.children]
+        folders = [
+            _folder_to_dict(f, max_depth=max_depth)
+            for f in account.inbox.parent.children
+        ]
     except Exception as e:
         output.handle_error(f"Failed to list folders: {e}", "SERVER_ERROR", exit_code=7)
 
@@ -91,13 +105,17 @@ def _print_folder_tree(folders, indent=0):
 def folders_create(ctx, name):
     """Create a new mail folder."""
     from ..config import check_permission
+
     check_permission("folders create")
 
     from exchangelib import Folder
+
     account = get_account()
     parts = [p.strip() for p in name.split("/") if p.strip()]
     if not parts:
-        output.handle_error("Folder name cannot be empty", "VALIDATION_ERROR", exit_code=2)
+        output.handle_error(
+            "Folder name cannot be empty", "VALIDATION_ERROR", exit_code=2
+        )
 
     parent = account.inbox.parent
     created = []
@@ -122,8 +140,11 @@ def folders_create(ctx, name):
             created.append(part)
             parent = new_folder
 
-    if not created:
+    if not created and not ctx.obj.get("dry_run"):
         data = {"message": f"Folder already exists: {name}"}
+    elif ctx.obj.get("dry_run"):
+        output.dry_run_output("Create folder", {"name": name})
+        return
     else:
         data = {"message": f"Folder created: {name}", "created": created}
 
@@ -140,6 +161,7 @@ def folders_create(ctx, name):
 def folders_rename(ctx, name, new_name):
     """Rename a mail folder."""
     from ..config import check_permission
+
     check_permission("folders rename")
 
     account = get_account()
@@ -147,9 +169,18 @@ def folders_rename(ctx, name, new_name):
     if not folder:
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output("Rename folder", {"from": name, "to": new_name})
+        return
+
     old_name = folder.name
-    folder.name = new_name
-    folder.save(update_fields=["name"])
+    try:
+        folder.name = new_name
+        folder.save(update_fields=["name"])
+    except Exception as e:
+        output.handle_error(
+            f"Failed to rename folder: {e}", "SERVER_ERROR", exit_code=7
+        )
 
     data = {"message": f"Renamed: {old_name} -> {new_name}"}
     if output.is_json():
@@ -165,18 +196,30 @@ def folders_rename(ctx, name, new_name):
 def folders_move(ctx, name, target):
     """Move a folder under another folder."""
     from ..config import check_permission
+
     check_permission("folders move")
 
     account = get_account()
     src = _find_folder(account, name)
     if not src:
-        output.handle_error(f"Source folder not found: {name}", "NOT_FOUND", exit_code=4)
+        output.handle_error(
+            f"Source folder not found: {name}", "NOT_FOUND", exit_code=4
+        )
 
     dst = _find_folder(account, target)
     if not dst:
-        output.handle_error(f"Target folder not found: {target}", "NOT_FOUND", exit_code=4)
+        output.handle_error(
+            f"Target folder not found: {target}", "NOT_FOUND", exit_code=4
+        )
 
-    src.move(dst)
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output("Move folder", {"from": name, "to": target})
+        return
+
+    try:
+        src.move(dst)
+    except Exception as e:
+        output.handle_error(f"Failed to move folder: {e}", "SERVER_ERROR", exit_code=7)
 
     data = {"message": f"Moved: {name} -> {target}/"}
     if output.is_json():
@@ -192,6 +235,7 @@ def folders_move(ctx, name, target):
 def folders_empty(ctx, name, force):
     """Empty a mail folder (moves all items to trash)."""
     from ..config import check_permission
+
     check_permission("folders empty")
 
     account = get_account()
@@ -200,7 +244,15 @@ def folders_empty(ctx, name, force):
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
     if not force and not output.is_json():
-        click.confirm(f"Empty folder '{name}'? All items will be moved to trash.", abort=True)
+        click.confirm(
+            f"Empty folder '{name}'? All items will be moved to trash.", abort=True
+        )
+
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Empty folder", {"name": name, "total": folder.total_count or 0}
+        )
+        return
 
     folder.empty()
 
@@ -218,6 +270,7 @@ def folders_empty(ctx, name, force):
 def folders_delete(ctx, name, force):
     """Delete a mail folder."""
     from ..config import check_permission
+
     check_permission("folders delete")
 
     account = get_account()
@@ -227,6 +280,10 @@ def folders_delete(ctx, name, force):
 
     if not force and not output.is_json():
         click.confirm(f"Delete folder '{name}'?", abort=True)
+
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output("Delete folder", {"name": name})
+        return
 
     folder.delete()
 

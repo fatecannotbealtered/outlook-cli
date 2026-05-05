@@ -8,6 +8,7 @@ OUTLOOK_SERVER, OUTLOOK_TIMEZONE, OUTLOOK_PERMISSIONS
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 CONFIG_DIR_NAME = ".outlook-cli"
@@ -17,22 +18,45 @@ CONFIG_FILE_NAME = "config.json"
 PERMISSION_LEVELS = {"read-only": 0, "write": 1, "full": 2}
 
 # Commands that require "full" permission (send/reply/forward are irreversible)
-FULL_COMMANDS = frozenset({
-    "mail send", "mail reply", "mail reply-all", "mail forward",
-    "mail draft-send",
-})
+FULL_COMMANDS = frozenset(
+    {
+        "mail send",
+        "mail reply",
+        "mail reply-all",
+        "mail forward",
+        "mail draft-send",
+    }
+)
 
 # Commands that require "write" permission
-WRITE_COMMANDS = frozenset({
-    "mail move", "mail mark", "mail flag", "mail categorize",
-    "mail restore", "mail batch", "mail delete", "mail draft-edit",
-    "mail draft-delete",
-    "cal create", "cal update", "cal delete",
-    "folders create", "folders rename", "folders move",
-    "folders empty", "folders delete",
-    "rules create", "rules update", "rules delete", "rules toggle",
-    "tools oof set", "tools oof disable", "tools respond",
-})
+WRITE_COMMANDS = frozenset(
+    {
+        "mail move",
+        "mail mark",
+        "mail flag",
+        "mail categorize",
+        "mail restore",
+        "mail batch",
+        "mail delete",
+        "mail draft-edit",
+        "mail draft-delete",
+        "cal create",
+        "cal update",
+        "cal delete",
+        "folders create",
+        "folders rename",
+        "folders move",
+        "folders empty",
+        "folders delete",
+        "rules create",
+        "rules update",
+        "rules delete",
+        "rules toggle",
+        "tools oof set",
+        "tools oof disable",
+        "tools respond",
+    }
+)
 
 
 def config_dir() -> Path:
@@ -51,7 +75,7 @@ def load() -> dict:
     Password is decrypted if stored in encrypted form.
     Returns empty dict if no config exists (graceful degradation).
     """
-    from .crypto import decrypt
+    from .crypto import DecryptionError, decrypt
 
     cfg = {}
     path = config_path()
@@ -59,13 +83,25 @@ def load() -> dict:
         try:
             with open(path, "r", encoding="utf-8") as f:
                 cfg = json.load(f)
-        except (json.JSONDecodeError, OSError):
-            pass
+        except json.JSONDecodeError as e:
+            print(
+                f"Warning: config file is corrupted ({e}). "
+                f"Run 'outlook-cli setup login' to re-configure.",
+                file=sys.stderr,
+            )
+            return {}
+        except OSError as e:
+            print(f"Warning: cannot read config file: {e}", file=sys.stderr)
+            return {}
 
     # Decrypt password from file
     pwd = cfg.get("password", "")
     if pwd:
-        cfg["password"] = decrypt(pwd)
+        try:
+            cfg["password"] = decrypt(pwd)
+        except DecryptionError as e:
+            print(f"Warning: {e}", file=sys.stderr)
+            cfg["password"] = ""
 
     # Environment variable overrides
     # OUTLOOK_PASSWORD is supported for CI/CD and integration tests.
@@ -83,14 +119,31 @@ def load() -> dict:
         if val:
             cfg[cfg_key] = val
 
+    # Validate permission mode if set
+    perm = cfg.get("permissions_mode") or (
+        cfg.get("permissions", {}).get("mode", "")
+        if isinstance(cfg.get("permissions"), dict)
+        else ""
+    )
+    if perm and perm not in PERMISSION_LEVELS:
+        print(
+            f"Warning: invalid permission mode '{perm}', falling back to 'read-only'. "
+            f"Valid values: {', '.join(PERMISSION_LEVELS.keys())}",
+            file=sys.stderr,
+        )
+        cfg.pop("permissions_mode", None)
+        if isinstance(cfg.get("permissions"), dict):
+            cfg["permissions"]["mode"] = "read-only"
+
     return cfg
 
 
 def save(cfg: dict) -> None:
     """Save config to file with secure permissions.
 
-    Password is encrypted with machine-bound AES-256-GCM if the
+    Password is encrypted with machine-bound AES if the
     cryptography package is available. Otherwise stored as plaintext.
+    Uses atomic write (temp file + rename) to prevent corruption.
     """
     from .crypto import encrypt, is_encrypted
 
@@ -99,7 +152,7 @@ def save(cfg: dict) -> None:
     try:
         os.chmod(d, 0o700)
     except OSError:
-        pass
+        pass  # Windows: chmod is no-op; ACLs not enforced here
 
     path = config_path()
     # Don't save env-only fields to file
@@ -110,12 +163,34 @@ def save(cfg: dict) -> None:
     if pwd and not is_encrypted(pwd):
         save_cfg["password"] = encrypt(pwd)
 
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(save_cfg, f, ensure_ascii=False, indent=2)
+    # Atomic write: write to temp file, then rename
+    tmp_fd = None
+    tmp_path = None
+    try:
+        tmp_fd, tmp_path = tempfile.mkstemp(dir=str(d), suffix=".tmp")
+        with os.fdopen(tmp_fd, "w", encoding="utf-8") as f:
+            json.dump(save_cfg, f, ensure_ascii=False, indent=2)
+            f.flush()
+            os.fsync(f.fileno())
+        tmp_fd = None  # fdopen takes ownership
+        os.replace(tmp_path, path)
+        tmp_path = None  # successfully renamed
+    finally:
+        if tmp_fd is not None:
+            try:
+                os.close(tmp_fd)
+            except OSError:
+                pass
+        if tmp_path is not None:
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
+
     try:
         os.chmod(path, 0o600)
     except OSError:
-        pass
+        pass  # Windows: chmod is no-op
 
 
 def is_configured() -> bool:
@@ -163,9 +238,11 @@ def check_permission(cmd_path: str) -> None:
 
 def _deny(cmd_path: str, current: str, required: str) -> None:
     from .output import error_json
+
     error_json(
-        f"权限不足：当前模式 '{current}'，命令 '{cmd_path}' 需要 '{required}' 或更高",
+        f"Insufficient permission: mode is '{current}', "
+        f"command '{cmd_path}' requires '{required}' or higher",
         code="FORBIDDEN",
-        hint=f"编辑 {config_path()} 将 permissions.mode 改为 '{required}'",
+        hint=f"Edit {config_path()} and set permissions.mode to '{required}'",
     )
     sys.exit(5)

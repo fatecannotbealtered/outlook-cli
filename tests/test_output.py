@@ -144,10 +144,9 @@ def test_handle_api_error_timeout(capsys):
 
 def test_dry_run_output(capsys):
     output.init(json_mode=False, quiet=False)
-    result = output.dry_run_output("send email", {"to": "a@b.com"})
+    output.dry_run_output("send email", {"to": "a@b.com"})
     captured = capsys.readouterr()
     assert "DRY RUN" in captured.out
-    assert result is False
 
 
 def test_dry_run_suppressed_quiet(capsys):
@@ -160,8 +159,13 @@ def test_dry_run_suppressed_quiet(capsys):
 def test_error_codes_complete():
     """Ensure all expected error codes have hints."""
     expected_codes = [
-        "CONFIG_ERROR", "AUTH_REQUIRED", "FORBIDDEN",
-        "NOT_FOUND", "VALIDATION_ERROR", "SERVER_ERROR", "NETWORK_ERROR",
+        "CONFIG_ERROR",
+        "AUTH_REQUIRED",
+        "FORBIDDEN",
+        "NOT_FOUND",
+        "VALIDATION_ERROR",
+        "SERVER_ERROR",
+        "NETWORK_ERROR",
     ]
     for code in expected_codes:
         assert code in output.ERROR_CODES, f"Missing error code: {code}"

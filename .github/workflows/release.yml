@@ -112,11 +112,23 @@ jobs:
           cat artifacts/*/checksums.txt 2>/dev/null | sort -u > release/checksums.txt || true
           ls -la release/
 
+      - name: Extract release notes from CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Extract the section for this version (from ## [x.y.z] to the next ## [)
+          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d; }' > release-notes.md
+          # Fallback: if extraction produced nothing, use a simple note
+          if [ ! -s release-notes.md ]; then
+            echo "## v${VERSION}" > release-notes.md
+            echo "" >> release-notes.md
+            echo "See [CHANGELOG.md](CHANGELOG.md) for details." >> release-notes.md
+          fi
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
-          generate_release_notes: true
+          body_path: release-notes.md
           draft: false
           prerelease: false
 

@@ -7,6 +7,57 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-05-06
+
+### Security
+
+- **Audit hook wired**: `_audit_hook` now fires via `ctx.call_on_close`, write commands produce audit records.
+- **Irreversible op guards**: `cal create/update/delete` (with attendees), `tools oof set/disable`, `tools respond` now require `--preview` or `--send`.
+- **PBKDF2 salt uniqueness**: salt derived from machine_id (SHA256), iterations bumped from 100k to 600k (OWASP 2023).
+- **Atomic config write**: `tempfile` + `os.replace` prevents corruption on crash.
+- **Decryption error handling**: `decrypt()` raises `DecryptionError` instead of returning empty string.
+- **Audit log sanitization**: `--password=value` form now properly stripped.
+- **Plaintext fallback warning**: `encrypt()` prints stderr warning when cryptography is unavailable.
+
+### Fixed
+
+- **`--json`/`--quiet`/`--dry-run` at any position**: custom `FlexibleGroup` extracts global flags from any CLI position. `mail list --json` now works.
+- **`mail list`/`search`/`drafts` human output includes short ID**: enables `list → read` workflow.
+- **`mail_search` pagination**: client-side sender filter now correctly computes `total`/`has_more`/`next_offset`.
+- **`mail read` ID field**: returns Exchange ItemId (not MIME Message-ID) for consistency with `--id` flags.
+- **`email_to_dict` ID field**: unified to Exchange ItemId across all commands.
+- **`rules_update` merge**: conditions/actions merge with existing (additive), exceptions properly handled.
+- **`find_mail_by_id`**: recursive → iterative BFS with depth limit 20, prevents `RecursionError`.
+- **Thread safety**: `threading.Lock` on `exchange._account` and `crypto._fernet` globals.
+- **Config load error**: corrupted JSON now warns instead of silently returning empty dict.
+- **Permission mode validation**: invalid `OUTLOOK_PERMISSIONS` value warns and falls back to `read-only`.
+- **`cal_create` time validation**: end time must be after start time.
+- **`mail_export` MIME check**: errors gracefully when `mime_content` is unavailable.
+- **Attachment download dedup**: same-name attachments get `_N` suffix.
+- **macOS UUID parsing**: regex replaces fragile `split('"')[-2]`.
+- **`setup_login` env var cleanup**: properly restores original env vars on failure.
+- **Audit cleanup month arithmetic**: year-month subtraction replaces `months * 30` days.
+- **Audit cleanup frequency**: runs once per month instead of every `log()` call.
+- **`handle_api_error` matching**: "connect" no longer matches "disconnect"/"reconnect".
+
+### Changed
+
+- **`--dry-run` on all write commands**: expanded from 2/30 to 30/30 write commands.
+- **All error messages in English**: 40+ Chinese messages converted to English for consistency.
+- **`print_flat_json`**: `indent=None` (was `indent=2`), truly token-efficient for AI agents.
+- **`dry_run_output`**: returns `None`, outputs JSON in `--json` mode.
+- **`_NO_COLOR`**: evaluated at runtime (was frozen at import time).
+- **`pass_dry_run`**: added `@functools.wraps` for correct Click help text.
+- **`build.py`**: `--collect-all exchangelib` replaces 4 `--hidden-import` entries.
+- **`install.js`**: checksum verification now hard-fails on mismatch.
+- **Work hours**: configurable via `OUTLOOK_WORK_START`/`OUTLOOK_WORK_END` env vars (default 08-18).
+- **Folder output**: `_folder_to_dict` includes `id` field.
+
+### CI/CD
+
+- **`ruff format --check`** added to CI pipeline (equivalent to `gofmt`).
+- **Release notes**: CHANGELOG.md extracted per-version for GitHub Release page.
+
 ## [1.0.1] - 2026-05-03
 
 ### Fixed
@@ -47,6 +98,7 @@ Initial release of outlook-cli for Microsoft Exchange.
 - SKILL.md with complete command reference and usage patterns.
 - SECURITY.md with vulnerability reporting and credential handling design.
 
-[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.1...HEAD
+[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/fatecannotbealtered/outlook-cli/releases/tag/v1.0.0

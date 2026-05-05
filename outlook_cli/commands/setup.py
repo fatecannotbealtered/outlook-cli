@@ -16,9 +16,17 @@ def setup_group():
 
 @setup_group.command("login")
 @click.option("--email", default=None, help="Exchange email (prompts if not provided)")
-@click.option("--password", default=None, help="Password (prompts if not provided, hidden input)")
-@click.option("--server", default="", help="Exchange server URL (optional, auto-discover if empty)")
-@click.option("--timezone", default="Asia/Shanghai", help="Timezone (default: Asia/Shanghai)")
+@click.option(
+    "--password", default=None, help="Password (prompts if not provided, hidden input)"
+)
+@click.option(
+    "--server",
+    default="",
+    help="Exchange server URL (optional, auto-discover if empty)",
+)
+@click.option(
+    "--timezone", default="Asia/Shanghai", help="Timezone (default: Asia/Shanghai)"
+)
 @click.option("--skip-test", is_flag=True, help="Skip connection test")
 def setup_login(email, password, server, timezone, skip_test):
     """Configure Exchange credentials.
@@ -37,16 +45,18 @@ def setup_login(email, password, server, timezone, skip_test):
             email = click.prompt("Outlook email")
         else:
             output.handle_error(
-                "非交互模式下需要 --email 参数",
-                "VALIDATION_ERROR", exit_code=2,
+                "--email is required in non-interactive mode",
+                "VALIDATION_ERROR",
+                exit_code=2,
             )
     if password is None:
         if sys.stdin.isatty():
             password = click.prompt("Password", hide_input=True)
         else:
             output.handle_error(
-                "非交互模式下需要 --password 参数",
-                "VALIDATION_ERROR", exit_code=2,
+                "--password is required in non-interactive mode",
+                "VALIDATION_ERROR",
+                exit_code=2,
             )
 
     cfg = {
@@ -59,6 +69,7 @@ def setup_login(email, password, server, timezone, skip_test):
 
     # Test connection (skippable for Agent)
     from ..exchange import reset_connection
+
     reset_connection()
 
     if not skip_test:
@@ -66,6 +77,7 @@ def setup_login(email, password, server, timezone, skip_test):
             output.info("Testing connection...")
         try:
             from ..exchange import get_account
+
             os.environ["OUTLOOK_EMAIL"] = cfg["email"]
             os.environ["OUTLOOK_PASSWORD"] = cfg["password"]
             if cfg["server"]:
@@ -96,13 +108,15 @@ def setup_login(email, password, server, timezone, skip_test):
         output.info("Permission mode: read-only (edit config to change)")
 
     if output.is_json():
-        output.print_json({
-            "status": "ok",
-            "email": cfg["email"],
-            "server": cfg["server"] or "(auto-discover)",
-            "timezone": cfg["timezone"],
-            "permissions": "read-only",
-        })
+        output.print_json(
+            {
+                "status": "ok",
+                "email": cfg["email"],
+                "server": cfg["server"] or "(auto-discover)",
+                "timezone": cfg["timezone"],
+                "permissions": "read-only",
+            }
+        )
 
 
 @setup_group.command("status")
@@ -118,7 +132,8 @@ def setup_status():
         "timezone": cfg.get("timezone", "Asia/Shanghai"),
         "config_file": str(config_path()),
         "permissions": cfg.get("permissions", {}).get("mode", "read-only")
-            if isinstance(cfg.get("permissions"), dict) else "read-only",
+        if isinstance(cfg.get("permissions"), dict)
+        else "read-only",
     }
 
     if output.is_json():
@@ -138,13 +153,14 @@ def setup_doctor():
     """Test Exchange connection and report health."""
     if not is_configured():
         output.handle_error(
-            "未配置凭据，运行 'outlook-cli setup login'",
+            "Credentials not configured. Run 'outlook-cli setup login'",
             "CONFIG_ERROR",
             exit_code=3,
         )
 
     from ..exchange import get_account
     from ..exchange import reset_connection
+
     reset_connection()
 
     output.info("Testing Exchange connection...")
@@ -161,7 +177,9 @@ def setup_doctor():
             output.print_json(data)
         else:
             output.success(f"Connected: {data['email']}")
-            output.info(f"Inbox: {data['inbox_total']} total, {data['inbox_unread']} unread")
+            output.info(
+                f"Inbox: {data['inbox_total']} total, {data['inbox_unread']} unread"
+            )
     except Exception as e:
         data = {"connection": "failed", "error": str(e)}
         if output.is_json():

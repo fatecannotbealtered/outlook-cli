@@ -63,6 +63,7 @@ def get_json(*args):
 # setup status, setup doctor
 # ──────────────────────────────────────────────
 
+
 class TestStep1Connection:
     def test_setup_status(self):
         """[setup status]"""
@@ -82,6 +83,7 @@ class TestStep1Connection:
 # reply, reply-all, forward (preview), attachment-summary, stats, delete
 # ──────────────────────────────────────────────
 
+
 class TestStep2MailRoundTrip:
     """Send email to self, exercise all mail commands, then clean up."""
 
@@ -92,7 +94,17 @@ class TestStep2MailRoundTrip:
     def test_01_send(self):
         """[mail send] Send email to self."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        data = get_json("mail", "send", "--to", email, "--subject", self.SUBJECT, "--body", self.BODY, "--send")
+        data = get_json(
+            "mail",
+            "send",
+            "--to",
+            email,
+            "--subject",
+            self.SUBJECT,
+            "--body",
+            self.BODY,
+            "--send",
+        )
         assert "已发送" in data["message"]
 
     def test_02_search(self):
@@ -101,7 +113,16 @@ class TestStep2MailRoundTrip:
         mid = None
         for _ in range(6):
             time.sleep(5)
-            data = get_json("mail", "search", "--subject", self.SUBJECT, "--sender", email, "--limit", "5")
+            data = get_json(
+                "mail",
+                "search",
+                "--subject",
+                self.SUBJECT,
+                "--sender",
+                email,
+                "--limit",
+                "5",
+            )
             if data.get("emails"):
                 mid = data["emails"][0]["id"]
                 break
@@ -161,9 +182,27 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        code, _, _ = run_cli("mail", "categorize", "--id", mid, "--action", "add", "--categories", "IntegrationTest")
+        code, _, _ = run_cli(
+            "mail",
+            "categorize",
+            "--id",
+            mid,
+            "--action",
+            "add",
+            "--categories",
+            "IntegrationTest",
+        )
         assert code == 0
-        code, _, _ = run_cli("mail", "categorize", "--id", mid, "--action", "remove", "--categories", "IntegrationTest")
+        code, _, _ = run_cli(
+            "mail",
+            "categorize",
+            "--id",
+            mid,
+            "--action",
+            "remove",
+            "--categories",
+            "IntegrationTest",
+        )
         assert code == 0
 
     def test_10_move_and_restore(self):
@@ -191,7 +230,9 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        code, _, _ = run_cli("mail", "export", "--id", mid, "--output-dir", str(tmp_path))
+        code, _, _ = run_cli(
+            "mail", "export", "--id", mid, "--output-dir", str(tmp_path)
+        )
         assert code == 0
         # Verify file was created
         files = list(tmp_path.glob("*"))
@@ -203,7 +244,9 @@ class TestStep2MailRoundTrip:
         if not mid:
             pytest.skip("send/search failed")
         # Our test email has no attachments, so this should either return empty or error
-        code, stdout, stderr = run_cli("mail", "download-attachment", "--id", mid, "--output-dir", "/tmp")
+        code, stdout, stderr = run_cli(
+            "mail", "download-attachment", "--id", mid, "--output-dir", "/tmp"
+        )
         # Either succeeds with 0 attachments, or exits with NOT_FOUND/VALIDATION_ERROR
         assert code in (0, 2, 4)
 
@@ -212,7 +255,9 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        data = get_json("mail", "reply", "--id", mid, "--body", "Reply test.", "--preview")
+        data = get_json(
+            "mail", "reply", "--id", mid, "--body", "Reply test.", "--preview"
+        )
         assert data["sent"] is False
 
     def test_16_reply_all_preview(self):
@@ -220,7 +265,9 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        data = get_json("mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--preview")
+        data = get_json(
+            "mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--preview"
+        )
         assert data["sent"] is False
 
     def test_17_forward_preview(self):
@@ -229,7 +276,17 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        data = get_json("mail", "forward", "--id", mid, "--to", email, "--body", "Fwd test.", "--preview")
+        data = get_json(
+            "mail",
+            "forward",
+            "--id",
+            mid,
+            "--to",
+            email,
+            "--body",
+            "Fwd test.",
+            "--preview",
+        )
         assert data["sent"] is False
 
     def test_18_batch_preview(self):
@@ -243,8 +300,16 @@ class TestStep2MailRoundTrip:
     def test_18b_search_keyword(self):
         """[mail search --keyword] Search by body keyword."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        data = get_json("mail", "search", "--keyword", self.BODY[:20],
-                        "--sender", email, "--limit", "5")
+        data = get_json(
+            "mail",
+            "search",
+            "--keyword",
+            self.BODY[:20],
+            "--sender",
+            email,
+            "--limit",
+            "5",
+        )
         assert "emails" in data
 
     def test_19_delete_cleanup(self):
@@ -261,6 +326,7 @@ class TestStep2MailRoundTrip:
 # Covers all send/reply/forward code paths with --send
 # ──────────────────────────────────────────────
 
+
 class TestStep2bSendVariants:
     """Test different send modes: HTML, attachments, real reply, real forward."""
 
@@ -272,9 +338,18 @@ class TestStep2bSendVariants:
         """[mail send --html] Send HTML email."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
         html_body = "<h1>Integration Test</h1><p>This is <b>HTML</b> content.</p>"
-        data = get_json("mail", "send", "--to", email,
-                        "--subject", f"{RUN_ID} html",
-                        "--body", html_body, "--html", "--send")
+        data = get_json(
+            "mail",
+            "send",
+            "--to",
+            email,
+            "--subject",
+            f"{RUN_ID} html",
+            "--body",
+            html_body,
+            "--html",
+            "--send",
+        )
         assert "已发送" in data["message"]
 
     def test_02_verify_html(self):
@@ -283,8 +358,16 @@ class TestStep2bSendVariants:
         mid = None
         for _ in range(6):
             time.sleep(5)
-            data = get_json("mail", "search", "--subject", f"{RUN_ID} html",
-                            "--sender", email, "--limit", "5")
+            data = get_json(
+                "mail",
+                "search",
+                "--subject",
+                f"{RUN_ID} html",
+                "--sender",
+                email,
+                "--limit",
+                "5",
+            )
             if data.get("emails"):
                 mid = data["emails"][0]["id"]
                 break
@@ -300,10 +383,19 @@ class TestStep2bSendVariants:
         att_file = tmp_path / "test-attachment.txt"
         att_file.write_text("Integration test attachment content", encoding="utf-8")
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        data = get_json("mail", "send", "--to", email,
-                        "--subject", f"{RUN_ID} attachment",
-                        "--body", "See attached file.",
-                        "--attachments", str(att_file), "--send")
+        data = get_json(
+            "mail",
+            "send",
+            "--to",
+            email,
+            "--subject",
+            f"{RUN_ID} attachment",
+            "--body",
+            "See attached file.",
+            "--attachments",
+            str(att_file),
+            "--send",
+        )
         assert "已发送" in data["message"]
 
     def test_04_verify_attachment(self):
@@ -312,8 +404,16 @@ class TestStep2bSendVariants:
         mid = None
         for _ in range(6):
             time.sleep(5)
-            data = get_json("mail", "search", "--subject", f"{RUN_ID} attachment",
-                            "--sender", email, "--limit", "5")
+            data = get_json(
+                "mail",
+                "search",
+                "--subject",
+                f"{RUN_ID} attachment",
+                "--sender",
+                email,
+                "--limit",
+                "5",
+            )
             if data.get("emails"):
                 mid = data["emails"][0]["id"]
                 break
@@ -331,8 +431,9 @@ class TestStep2bSendVariants:
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply to")
-        data = get_json("mail", "reply", "--id", mid,
-                        "--body", "This is a real reply.", "--send")
+        data = get_json(
+            "mail", "reply", "--id", mid, "--body", "This is a real reply.", "--send"
+        )
         assert data["sent"] is True
 
     def test_06_verify_reply_in_thread(self):
@@ -343,7 +444,9 @@ class TestStep2bSendVariants:
         time.sleep(3)
         data = get_json("mail", "thread", "--id", mid)
         thread_msgs = data.get("thread", data.get("messages", []))
-        assert len(thread_msgs) >= 2, f"Expected >=2 messages in thread, got {len(thread_msgs)}"
+        assert len(thread_msgs) >= 2, (
+            f"Expected >=2 messages in thread, got {len(thread_msgs)}"
+        )
 
     # --- Reply-all send ---
 
@@ -352,8 +455,9 @@ class TestStep2bSendVariants:
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply-all to")
-        data = get_json("mail", "reply-all", "--id", mid,
-                        "--body", "This is a reply-all.", "--send")
+        data = get_json(
+            "mail", "reply-all", "--id", mid, "--body", "This is a reply-all.", "--send"
+        )
         assert data["sent"] is True
 
     # --- Forward send ---
@@ -364,8 +468,17 @@ class TestStep2bSendVariants:
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to forward")
-        data = get_json("mail", "forward", "--id", mid, "--to", email,
-                        "--body", "Forwarding this.", "--send")
+        data = get_json(
+            "mail",
+            "forward",
+            "--id",
+            mid,
+            "--to",
+            email,
+            "--body",
+            "Forwarding this.",
+            "--send",
+        )
         assert data["sent"] is True
 
     def test_09_verify_forward(self):
@@ -373,10 +486,14 @@ class TestStep2bSendVariants:
         email = os.environ["OUTLOOK_IT_EMAIL"]
         for _ in range(6):
             time.sleep(5)
-            data = get_json("mail", "search", "--subject", "FW:",
-                            "--sender", email, "--limit", "5")
-            fwd = [e for e in data.get("emails", [])
-                   if f"{RUN_ID} html" in e.get("subject", "")]
+            data = get_json(
+                "mail", "search", "--subject", "FW:", "--sender", email, "--limit", "5"
+            )
+            fwd = [
+                e
+                for e in data.get("emails", [])
+                if f"{RUN_ID} html" in e.get("subject", "")
+            ]
             if fwd:
                 self.__class__._created_ids.append(fwd[0]["id"])
                 break
@@ -390,20 +507,37 @@ class TestStep2bSendVariants:
         email = os.environ["OUTLOOK_IT_EMAIL"]
         # Delete all emails with our RUN_ID subject
         for suffix in ["html", "attachment"]:
-            data = get_json("mail", "search", "--subject", f"{RUN_ID} {suffix}",
-                            "--sender", email, "--limit", "10")
+            data = get_json(
+                "mail",
+                "search",
+                "--subject",
+                f"{RUN_ID} {suffix}",
+                "--sender",
+                email,
+                "--limit",
+                "10",
+            )
             for e in data.get("emails", []):
                 run_cli("mail", "delete", "--id", e["id"], "--force")
         # Delete replies and forwards
         for mid in self.__class__._created_ids:
             run_cli("mail", "delete", "--id", mid, "--force")
         # Also search for reply/forward subjects
-        data = get_json("mail", "search", "--subject", f"Re: {RUN_ID}",
-                        "--sender", email, "--limit", "10")
+        data = get_json(
+            "mail",
+            "search",
+            "--subject",
+            f"Re: {RUN_ID}",
+            "--sender",
+            email,
+            "--limit",
+            "10",
+        )
         for e in data.get("emails", []):
             run_cli("mail", "delete", "--id", e["id"], "--force")
-        data = get_json("mail", "search", "--subject", "FW:",
-                        "--sender", email, "--limit", "10")
+        data = get_json(
+            "mail", "search", "--subject", "FW:", "--sender", email, "--limit", "10"
+        )
         for e in data.get("emails", []):
             if f"{RUN_ID}" in e.get("subject", ""):
                 run_cli("mail", "delete", "--id", e["id"], "--force")
@@ -414,6 +548,7 @@ class TestStep2bSendVariants:
 # send --save-draft, drafts, draft-read, draft-edit, draft-send, draft-delete
 # ──────────────────────────────────────────────
 
+
 class TestStep3DraftRoundTrip:
     SUBJECT = f"{RUN_ID} draft"
     _draft_id = None
@@ -421,14 +556,26 @@ class TestStep3DraftRoundTrip:
     def test_01_create_draft(self):
         """[mail send --save-draft]"""
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        data = get_json("mail", "send", "--to", email, "--subject", self.SUBJECT, "--body", "Draft body", "--save-draft")
+        data = get_json(
+            "mail",
+            "send",
+            "--to",
+            email,
+            "--subject",
+            self.SUBJECT,
+            "--body",
+            "Draft body",
+            "--save-draft",
+        )
         assert "草稿箱" in data.get("message", "")
 
     def test_02_list_drafts(self):
         """[mail drafts]"""
         time.sleep(2)
         data = get_json("mail", "drafts", "--limit", "20")
-        drafts = [d for d in data.get("drafts", []) if self.SUBJECT in d.get("subject", "")]
+        drafts = [
+            d for d in data.get("drafts", []) if self.SUBJECT in d.get("subject", "")
+        ]
         assert len(drafts) >= 1, f"Draft '{self.SUBJECT}' not found"
         self.__class__._draft_id = drafts[0]["id"]
 
@@ -445,7 +592,16 @@ class TestStep3DraftRoundTrip:
         did = self.__class__._draft_id
         if not did:
             pytest.skip("draft not created")
-        code, _, _ = run_cli("mail", "draft-edit", "--id", did, "--subject", f"{self.SUBJECT} edited", "--body", "Updated")
+        code, _, _ = run_cli(
+            "mail",
+            "draft-edit",
+            "--id",
+            did,
+            "--subject",
+            f"{self.SUBJECT} edited",
+            "--body",
+            "Updated",
+        )
         assert code == 0
 
     def test_05_draft_send_preview(self):
@@ -470,6 +626,7 @@ class TestStep3DraftRoundTrip:
 # cal list, cal create, cal update, cal delete
 # ──────────────────────────────────────────────
 
+
 class TestStep4CalendarRoundTrip:
     SUBJECT = f"{RUN_ID} cal"
     START = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d") + " 10:00"
@@ -478,9 +635,23 @@ class TestStep4CalendarRoundTrip:
 
     def test_01_create(self):
         """[cal create]"""
-        data = get_json("cal", "create", "--subject", self.SUBJECT, "--start", self.START, "--end", self.END,
-                        "--location", "IT Room", "--body", f"Auto {RUN_ID}")
-        assert "created" in data["message"].lower() or "Event created" in data["message"]
+        data = get_json(
+            "cal",
+            "create",
+            "--subject",
+            self.SUBJECT,
+            "--start",
+            self.START,
+            "--end",
+            self.END,
+            "--location",
+            "IT Room",
+            "--body",
+            f"Auto {RUN_ID}",
+        )
+        assert (
+            "created" in data["message"].lower() or "Event created" in data["message"]
+        )
 
     def test_02_list(self):
         """[cal list]"""
@@ -494,7 +665,9 @@ class TestStep4CalendarRoundTrip:
         eid = self.__class__._event_id
         if not eid:
             pytest.skip("event not created")
-        code, _, stderr = run_cli("cal", "update", "--id", eid, "--location", "Updated Room")
+        code, _, stderr = run_cli(
+            "cal", "update", "--id", eid, "--location", "Updated Room"
+        )
         assert code == 0, f"Exit {code}: {stderr}"
 
     def test_04_delete(self):
@@ -510,6 +683,7 @@ class TestStep4CalendarRoundTrip:
 # Step 4b: Calendar variants (attendees, subject filter)
 # ──────────────────────────────────────────────
 
+
 class TestStep4bCalendarVariants:
     """Test calendar with attendees and subject filtering."""
 
@@ -521,13 +695,25 @@ class TestStep4bCalendarVariants:
     def test_01_create_with_attendees(self):
         """[cal create --attendees] Create meeting with self as attendee."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        data = get_json("cal", "create",
-                        "--subject", self.SUBJECT,
-                        "--start", self.START, "--end", self.END,
-                        "--attendees", email,
-                        "--location", "Meeting Room",
-                        "--body", f"Attendees test {RUN_ID}")
-        assert "created" in data["message"].lower() or "Event created" in data["message"]
+        data = get_json(
+            "cal",
+            "create",
+            "--subject",
+            self.SUBJECT,
+            "--start",
+            self.START,
+            "--end",
+            self.END,
+            "--attendees",
+            email,
+            "--location",
+            "Meeting Room",
+            "--body",
+            f"Attendees test {RUN_ID}",
+        )
+        assert (
+            "created" in data["message"].lower() or "Event created" in data["message"]
+        )
 
     def test_02_list_verify_attendees(self):
         """[cal list] Verify attendees field in event."""
@@ -536,8 +722,9 @@ class TestStep4bCalendarVariants:
         assert len(events) >= 1, f"Event '{self.SUBJECT}' not found"
         self.__class__._event_id = events[0]["id"]
         # Verify attendees are present
-        assert events[0].get("attendees") or events[0].get("required_attendees"), \
+        assert events[0].get("attendees") or events[0].get("required_attendees"), (
             "Attendees field missing from cal list output"
+        )
 
     def test_03_list_subject_filter(self):
         """[cal list --subject] Filter by subject keyword."""
@@ -560,6 +747,7 @@ class TestStep4bCalendarVariants:
 # folders list, create, rename, move, empty, delete
 # ──────────────────────────────────────────────
 
+
 class TestStep5FolderRoundTrip:
     FOLDER_A = f"{RUN_ID}-folder-a"
     FOLDER_B = f"{RUN_ID}-folder-b"
@@ -577,7 +765,9 @@ class TestStep5FolderRoundTrip:
 
     def test_03_rename(self):
         """[folders rename]"""
-        code, _, _ = run_cli("folders", "rename", "--name", self.FOLDER_A, "--new-name", self.FOLDER_B)
+        code, _, _ = run_cli(
+            "folders", "rename", "--name", self.FOLDER_A, "--new-name", self.FOLDER_B
+        )
         assert code == 0
 
     def test_04_move(self):
@@ -585,18 +775,24 @@ class TestStep5FolderRoundTrip:
         # Create target parent
         code, _, _ = run_cli("folders", "create", "--name", self.FOLDER_C)
         assert code == 0
-        code, _, _ = run_cli("folders", "move", "--name", self.FOLDER_B, "--target", self.FOLDER_C)
+        code, _, _ = run_cli(
+            "folders", "move", "--name", self.FOLDER_B, "--target", self.FOLDER_C
+        )
         assert code == 0
 
     def test_05_empty(self):
         """[folders empty]"""
-        code, _, _ = run_cli("folders", "empty", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force")
+        code, _, _ = run_cli(
+            "folders", "empty", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force"
+        )
         assert code == 0
 
     def test_06_delete(self):
         """[folders delete] Clean up all test folders."""
         # Delete nested folder first, then parent
-        run_cli("folders", "delete", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force")
+        run_cli(
+            "folders", "delete", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force"
+        )
         run_cli("folders", "delete", "--name", self.FOLDER_C, "--force")
 
 
@@ -604,6 +800,7 @@ class TestStep5FolderRoundTrip:
 # Step 6: Rules round-trip (5 commands)
 # rules list, create, update, toggle, delete
 # ──────────────────────────────────────────────
+
 
 class TestStep6RulesRoundTrip:
     RULE_NAME = f"{RUN_ID}-rule"
@@ -617,9 +814,12 @@ class TestStep6RulesRoundTrip:
     def test_02_create(self):
         """[rules create] Create a disabled rule (safe)."""
         code, stdout, stderr = run_cli(
-            "rules", "create",
-            "--name", self.RULE_NAME,
-            "--sender", os.environ["OUTLOOK_IT_EMAIL"],
+            "rules",
+            "create",
+            "--name",
+            self.RULE_NAME,
+            "--sender",
+            os.environ["OUTLOOK_IT_EMAIL"],
             "--mark-read",
         )
         assert code == 0, f"Exit {code}: {stderr}"
@@ -631,7 +831,9 @@ class TestStep6RulesRoundTrip:
         rid = self.__class__._rule_id
         if not rid:
             pytest.skip("rule not created")
-        code, _, _ = run_cli("rules", "update", "--id", rid, "--name", f"{self.RULE_NAME}-updated")
+        code, _, _ = run_cli(
+            "rules", "update", "--id", rid, "--name", f"{self.RULE_NAME}-updated"
+        )
         assert code == 0
 
     def test_04_toggle(self):
@@ -658,6 +860,7 @@ class TestStep6RulesRoundTrip:
 # contacts, free-busy, rooms, rooms-free-busy, oof get, oof set, oof disable, respond
 # ──────────────────────────────────────────────
 
+
 class TestStep7Tools:
     def test_01_contacts(self):
         """[tools contacts --email]"""
@@ -668,15 +871,23 @@ class TestStep7Tools:
         """[tools contacts --query] Search by name keyword."""
         # Extract name part from email (before @) as search query
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        query = email.split("@")[0].split(".")[0]  # e.g. "song" from "ex_song.guo@tcl.com"
+        query = email.split("@")[0].split(".")[
+            0
+        ]  # e.g. "song" from "ex_song.guo@tcl.com"
         code, stdout, stderr = run_cli("tools", "contacts", "--query", query)
         # Should succeed (may return 0 or more results)
         assert code == 0, f"Exit {code}: {stderr}"
 
     def test_02_free_busy(self):
         """[tools free-busy]"""
-        data = get_json("tools", "free-busy", "--email", os.environ["OUTLOOK_IT_EMAIL"],
-                        "--start", datetime.now().strftime("%Y-%m-%d"))
+        data = get_json(
+            "tools",
+            "free-busy",
+            "--email",
+            os.environ["OUTLOOK_IT_EMAIL"],
+            "--start",
+            datetime.now().strftime("%Y-%m-%d"),
+        )
         assert "results" in data
 
     def test_03_rooms(self):
@@ -703,8 +914,16 @@ class TestStep7Tools:
         if not has_rooms:
             pytest.skip("No rooms available")
         tomorrow = (datetime.now() + timedelta(days=1)).strftime("%Y-%m-%d")
-        code, _, _ = run_cli("tools", "rooms-free-busy",
-                             "--start", f"{tomorrow} 10:00", "--end", f"{tomorrow} 11:00", "--limit", "3")
+        code, _, _ = run_cli(
+            "tools",
+            "rooms-free-busy",
+            "--start",
+            f"{tomorrow} 10:00",
+            "--end",
+            f"{tomorrow} 11:00",
+            "--limit",
+            "3",
+        )
         assert code == 0
 
     def test_05_oof_get(self):
@@ -716,7 +935,9 @@ class TestStep7Tools:
     def test_06_oof_set_and_disable(self):
         """[tools oof set] + [tools oof disable] Set then restore."""
         # Set OOF
-        code, _, _ = run_cli("tools", "oof", "set", "--message", f"Integration test {RUN_ID}")
+        code, _, _ = run_cli(
+            "tools", "oof", "set", "--message", f"Integration test {RUN_ID}"
+        )
         assert code == 0
         # Disable to restore original state
         code, _, _ = run_cli("tools", "oof", "disable")
@@ -726,9 +947,17 @@ class TestStep7Tools:
         """[tools oof set --start/--end] Set OOF with time range."""
         start = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d 09:00")
         end = (datetime.now() + timedelta(days=7)).strftime("%Y-%m-%d 18:00")
-        code, _, _ = run_cli("tools", "oof", "set",
-                             "--message", f"OOF with time range {RUN_ID}",
-                             "--start", start, "--end", end)
+        code, _, _ = run_cli(
+            "tools",
+            "oof",
+            "set",
+            "--message",
+            f"OOF with time range {RUN_ID}",
+            "--start",
+            start,
+            "--end",
+            end,
+        )
         assert code == 0
         # Verify the OOF state has the time range
         data = get_json("tools", "oof", "get")
@@ -739,6 +968,8 @@ class TestStep7Tools:
 
     def test_07_respond_no_meeting(self):
         """[tools respond] Verify error on non-existent ID."""
-        code, _, stderr = run_cli("tools", "respond", "--id", "fake-nonexistent-id", "--action", "accept")
+        code, _, stderr = run_cli(
+            "tools", "respond", "--id", "fake-nonexistent-id", "--action", "accept"
+        )
         # Should fail with NOT_FOUND (4) since ID doesn't exist
         assert code == 4
