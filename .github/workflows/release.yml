@@ -115,8 +115,11 @@ jobs:
       - name: Extract release notes from CHANGELOG
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          # Extract the section for this version (from ## [x.y.z] to the next ## [)
-          sed -n "/^## \[${VERSION}\]/,/^## \[/p" CHANGELOG.md | sed '$ { /^## \[/d; }' > release-notes.md
+          # Use awk for reliable section extraction across platforms
+          awk -v ver="$VERSION" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1 }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
           # Fallback: if extraction produced nothing, use a simple note
           if [ ! -s release-notes.md ]; then
             echo "## v${VERSION}" > release-notes.md
