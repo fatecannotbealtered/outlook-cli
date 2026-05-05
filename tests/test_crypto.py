@@ -3,6 +3,7 @@
 import json
 from unittest.mock import patch
 
+import pytest
 
 from outlook_cli import crypto
 
@@ -77,8 +78,8 @@ class TestDecryptBackwardCompat:
 class TestDecryptWrongMachine:
     """Simulate decryption with wrong key (different machine)."""
 
-    def test_wrong_key_returns_empty(self):
-        """Decrypting with a wrong Fernet key returns empty string."""
+    def test_wrong_key_raises_error(self):
+        """Decrypting with a wrong Fernet key raises DecryptionError."""
         encrypted = crypto.encrypt("my-password")
         # Simulate wrong machine by forcing a different Fernet
         original_fernet = crypto._fernet
@@ -86,10 +87,8 @@ class TestDecryptWrongMachine:
             crypto._fernet = None
             # Patch _machine_id to return different value
             with patch.object(crypto, "_machine_id", return_value=b"wrong-machine-id"):
-                result = crypto.decrypt(encrypted)
-            # On wrong machine, Fernet.decrypt will fail
-            # (or succeed with wrong key producing garbage — either way ≠ original)
-            assert result != "my-password"
+                with pytest.raises(crypto.DecryptionError, match="Failed to decrypt"):
+                    crypto.decrypt(encrypted)
         finally:
             crypto._fernet = original_fernet
 
@@ -100,9 +99,12 @@ class TestConfigIntegration:
     def test_save_encrypts_password(self, tmp_path, monkeypatch):
         """Config save should encrypt the password field."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        monkeypatch.setattr(
+            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
+        )
 
         from outlook_cli.config import save
+
         save({"email": "test@test.com", "password": "secret123", "server": ""})
 
         # Read raw file — password should be encrypted
@@ -113,9 +115,12 @@ class TestConfigIntegration:
     def test_load_decrypts_password(self, tmp_path, monkeypatch):
         """Config load should decrypt the password field."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        monkeypatch.setattr(
+            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
+        )
 
         from outlook_cli.config import save, load
+
         save({"email": "test@test.com", "password": "secret123", "server": ""})
 
         cfg = load()
@@ -124,7 +129,9 @@ class TestConfigIntegration:
     def test_load_handles_plaintext_legacy(self, tmp_path, monkeypatch):
         """Config load should handle old plaintext passwords (backward compat)."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        monkeypatch.setattr(
+            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
+        )
 
         # Write a legacy plaintext config
         config_file = tmp_path / "config.json"
@@ -132,15 +139,19 @@ class TestConfigIntegration:
             json.dump({"email": "test@test.com", "password": "plain-text-pwd"}, f)
 
         from outlook_cli.config import load
+
         cfg = load()
         assert cfg["password"] == "plain-text-pwd"
 
     def test_env_password_not_double_encrypted(self, tmp_path, monkeypatch):
         """Password from env var should not be encrypted on next save cycle."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        monkeypatch.setattr(
+            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
+        )
 
         from outlook_cli.config import save, load
+
         # First save with encrypted password
         save({"email": "test@test.com", "password": "secret123"})
 

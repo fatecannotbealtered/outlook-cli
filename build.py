@@ -44,10 +44,7 @@ def main():
         "--hidden-import", "outlook_cli.commands.tools",
         "--hidden-import", "outlook_cli.commands.setup",
         # exchangelib and its dynamic submodules
-        "--hidden-import", "exchangelib",
-        "--hidden-import", "exchangelib.items",
-        "--hidden-import", "exchangelib.properties",
-        "--hidden-import", "exchangelib.protocol",
+        "--collect-all", "exchangelib",
         str(entry),
     ]
 

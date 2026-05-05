@@ -91,10 +91,14 @@ function install() {
         verifyChecksum(archivePath, expectedHash);
         console.log("✔ Checksum verified");
       } else {
-        console.warn("Warning: archive not found in checksums.txt, skipping verification");
+        throw new Error(
+          `Archive ${archiveName} not found in checksums.txt. ` +
+          `Possible tampering — aborting installation.`
+        );
       }
     } catch (checksumErr) {
-      if (checksumErr.message.includes("Checksum mismatch")) {
+      if (checksumErr.message.includes("Checksum mismatch") ||
+          checksumErr.message.includes("not found in checksums.txt")) {
         throw checksumErr;
       }
       console.warn("Warning: could not verify checksum —", checksumErr.message);

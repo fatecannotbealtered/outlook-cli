@@ -49,9 +49,21 @@ def test_log_strips_password(isolate_audit):
         entry = json.loads(f.readline())
     args = entry["args"]
     assert "secret123" not in args
-    assert "--password" not in args
     assert "--email" in args
     assert "a@b.com" in args
+    # Flag is kept, value is stripped (two-arg form)
+    assert "--password" in args
+
+
+def test_log_strips_password_equals(isolate_audit):
+    """--password=value form is sanitized."""
+    audit.log("setup login", ["--email", "a@b.com", "--password=mysecret"], 0, 200)
+    files = audit.files()
+    with open(files[0], "r", encoding="utf-8") as f:
+        entry = json.loads(f.readline())
+    args = entry["args"]
+    assert "mysecret" not in str(args)
+    assert "--password=***" in args
 
 
 def test_log_strips_token(isolate_audit):
@@ -60,7 +72,7 @@ def test_log_strips_token(isolate_audit):
     with open(files[0], "r", encoding="utf-8") as f:
         entry = json.loads(f.readline())
     assert "abc123" not in entry["args"]
-    assert "--token" not in entry["args"]
+    assert "--token" in entry["args"]  # flag kept, value stripped
     assert "--other" in entry["args"]
     assert "val" in entry["args"]
 

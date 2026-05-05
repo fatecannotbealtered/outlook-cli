@@ -31,6 +31,9 @@ jobs:
       - name: Lint with ruff
         run: ruff check outlook_cli/ tests/
 
+      - name: Check formatting with ruff
+        run: ruff format --check outlook_cli/ tests/
+
       - name: Run tests
         run: pytest tests/ -v --tb=short
 

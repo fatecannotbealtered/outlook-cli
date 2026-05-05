@@ -4,9 +4,15 @@ Migrated from the original utils.py with improved structure.
 """
 
 import os
+import threading
+from collections import deque
 
 # Lazy import of exchangelib to avoid import errors when not installed
 _account = None
+_account_lock = threading.Lock()
+
+# Max folder depth for find_mail_by_id
+_MAX_FOLDER_DEPTH = 20
 
 
 def get_account(shared_mailbox: str = None):
@@ -22,6 +28,7 @@ def get_account(shared_mailbox: str = None):
     if not shared_mailbox:
         try:
             import click
+
             ctx = click.get_current_context(silent=True)
             if ctx and ctx.obj:
                 shared_mailbox = ctx.obj.get("account") or ""
@@ -29,6 +36,7 @@ def get_account(shared_mailbox: str = None):
             pass
 
     from .config import load
+
     cfg = load()
 
     if not shared_mailbox:
@@ -38,87 +46,97 @@ def get_account(shared_mailbox: str = None):
     if _account is not None:
         return _account
 
-    email = cfg.get("email", "").strip()
-    password = cfg.get("password", "").strip()
+    with _account_lock:
+        # Double-check after acquiring lock
+        if _account is not None:
+            return _account
 
-    if not email or not password:
-        from .output import handle_error as _handle
-        _handle(
-            "未配置凭据，运行 'outlook-cli setup login' 设置",
-            "CONFIG_ERROR",
-            exit_code=3,
-        )
+        email = cfg.get("email", "").strip()
+        password = cfg.get("password", "").strip()
 
-    try:
-        from exchangelib import Credentials, Account, Configuration, DELEGATE
-        from exchangelib.errors import AutoDiscoverFailed
-    except ImportError:
-        from .output import handle_error as _handle
-        _handle(
-            "exchangelib 未安装，运行: pip install exchangelib",
-            "CONFIG_ERROR",
-            exit_code=3,
-        )
+        if not email or not password:
+            from .output import handle_error as _handle
 
-    credentials = Credentials(email, password)
-    server = cfg.get("server", "").strip()
-
-    # Target email: shared mailbox or primary
-    target_email = shared_mailbox or email
-
-    try:
-        if server:
-            config = Configuration(server=server, credentials=credentials)
-            _account = Account(target_email, config=config, access_type=DELEGATE)
-        else:
-            _account = Account(
-                target_email, credentials=credentials,
-                autodiscover=True, access_type=DELEGATE,
+            _handle(
+                "Credentials not configured. Run 'outlook-cli setup login'",
+                "CONFIG_ERROR",
+                exit_code=3,
             )
-    except AutoDiscoverFailed:
-        from .output import handle_error as _handle
-        _handle(
-            "Autodiscover 失败，请设置 OUTLOOK_SERVER 环境变量",
-            "NETWORK_ERROR",
-            exit_code=7,
-        )
-    except Exception as e:
-        from .output import handle_api_error
-        handle_api_error(e)
 
-    return _account
+        try:
+            from exchangelib import Credentials, Account, Configuration, DELEGATE
+            from exchangelib.errors import AutoDiscoverFailed
+        except ImportError:
+            from .output import handle_error as _handle
+
+            _handle(
+                "exchangelib not installed. Run: pip install exchangelib",
+                "CONFIG_ERROR",
+                exit_code=3,
+            )
+
+        credentials = Credentials(email, password)
+        server = cfg.get("server", "").strip()
+
+        # Target email: shared mailbox or primary
+        target_email = shared_mailbox or email
+
+        try:
+            if server:
+                config = Configuration(server=server, credentials=credentials)
+                _account = Account(target_email, config=config, access_type=DELEGATE)
+            else:
+                _account = Account(
+                    target_email,
+                    credentials=credentials,
+                    autodiscover=True,
+                    access_type=DELEGATE,
+                )
+        except AutoDiscoverFailed:
+            from .output import handle_error as _handle
+
+            _handle(
+                "Autodiscover failed. Set OUTLOOK_SERVER env var",
+                "NETWORK_ERROR",
+                exit_code=7,
+            )
+        except Exception as e:
+            from .output import handle_api_error
+
+            handle_api_error(e)
+
+        return _account
 
 
 def get_tz():
     """Get timezone object. Prefers exchangelib.EWSTimeZone (has ms_id for EWS)."""
     from .config import load
+
     cfg = load()
     tz_name = cfg.get("timezone", "Asia/Shanghai")
 
     # Prefer EWSTimeZone: exchangelib needs tz.ms_id for Exchange API calls
     try:
         from exchangelib.ewsdatetime import EWSTimeZone
+
         return EWSTimeZone(tz_name)
     except Exception:
         pass
-    # Fallback: pytz
-    try:
-        import pytz
-        return pytz.timezone(tz_name)
-    except Exception:
-        pass
-    # Fallback: zoneinfo
+    # Fallback: zoneinfo (stdlib in 3.9+)
     try:
         from zoneinfo import ZoneInfo
+
         return ZoneInfo(tz_name)
     except Exception:
         pass
     # Last resort: UTC
     try:
         from exchangelib.ewsdatetime import EWSTimeZone
+
         return EWSTimeZone("UTC")
     except Exception:
         from datetime import timezone
+
         return timezone.utc
 
 
@@ -160,37 +178,59 @@ def resolve_folder(account, folder_path: str):
             folder = folder / part
         except Exception:
             from .output import handle_error
-            handle_error(f"文件夹不存在: {folder_path}", "NOT_FOUND", exit_code=4)
+
+            handle_error(f"Folder not found: {folder_path}", "NOT_FOUND", exit_code=4)
     return folder
 
 
 def find_mail_by_id(account, message_id: str):
-    """Search for a mail by message_id across all folders."""
+    """Search for a mail by ItemId across common folders.
+
+    Uses iterative BFS with depth limit instead of unbounded recursion.
+    """
+    # First try inbox directly (most common case)
     for item in account.inbox.filter(message_id=message_id):
         return item
 
-    def _search(folder):
+    # BFS across all folders with depth limit
+    root = account.inbox.parent
+    queue = deque()
+    try:
+        for child in root.children:
+            queue.append((child, 1))
+    except Exception:
+        pass
+
+    visited = set()
+    while queue:
+        folder, depth = queue.popleft()
+        if depth > _MAX_FOLDER_DEPTH:
+            continue
+        folder_id = id(folder)
+        if folder_id in visited:
+            continue
+        visited.add(folder_id)
+
         try:
             for item in folder.filter(message_id=message_id):
                 return item
         except Exception:
             pass
-        try:
-            for child in folder.children:
-                result = _search(child)
-                if result:
-                    return result
-        except Exception:
-            pass
-        return None
 
-    return _search(account.inbox.parent)
+        if depth < _MAX_FOLDER_DEPTH:
+            try:
+                for child in folder.children:
+                    queue.append((child, depth + 1))
+            except Exception:
+                pass
+
+    return None
 
 
 def safe_filename(name: str) -> str:
     """Sanitize filename to prevent path traversal."""
     name = os.path.basename(name)
-    safe = "".join(c if (c.isalnum() or c in " ._-()[]") else "_" for c in name)
+    safe = "".join(c if (c.isalnum() or c in "._-()[]") else "_" for c in name)
     return safe.strip() or "attachment"
 
 
@@ -208,20 +248,26 @@ def email_to_dict(item, preview_len: int = 200) -> dict:
     cc_list = [m.email_address for m in (item.cc_recipients or [])]
     body = item.text_body or ""
     body_clean = " ".join(body.split())
+    # Use Exchange ItemId (not MIME Message-ID) for consistency with --id flags
+    item_id = str(item.id) if hasattr(item, "id") and item.id else ""
     return {
-        "id": item.message_id or str(item.id),
-        "subject": item.subject or "(无主题)",
+        "id": item_id,
+        "subject": item.subject or "(no subject)",
         "sender": sender,
         "to": to_list,
         "cc": cc_list,
-        "date": item.datetime_received.strftime("%Y-%m-%d %H:%M:%S") if item.datetime_received else "",
+        "date": item.datetime_received.strftime("%Y-%m-%d %H:%M:%S")
+        if item.datetime_received
+        else "",
         "is_read": item.is_read,
         "has_attachments": bool(item.attachments),
-        "preview": body_clean[:preview_len] + ("..." if len(body_clean) > preview_len else ""),
+        "preview": body_clean[:preview_len]
+        + ("..." if len(body_clean) > preview_len else ""),
     }
 
 
 def reset_connection() -> None:
     """Reset cached connection (for testing or re-login)."""
     global _account
-    _account = None
+    with _account_lock:
+        _account = None

@@ -6,13 +6,17 @@ so that encrypted credentials only work on the same machine.
 Falls back to plaintext if the `cryptography` package is not installed.
 """
 
+import hashlib
 import os
 import platform
+import re
+import threading
 
 # Prefix added to encrypted values so we can detect them on load
 ENCRYPTED_PREFIX = "enc:v1:"
 
 _fernet = None
+_fernet_lock = threading.Lock()
 
 
 def _machine_id() -> bytes:
@@ -35,6 +39,7 @@ def _machine_id() -> bytes:
     if os.name == "nt":
         try:
             import winreg
+
             key = winreg.OpenKey(
                 winreg.HKEY_LOCAL_MACHINE,
                 r"SOFTWARE\Microsoft\Cryptography",
@@ -55,19 +60,20 @@ def _machine_id() -> bytes:
             except (OSError, IOError):
                 pass
 
-    # On macOS: try IOPlatformSerialNumber via ioreg
+    # On macOS: try IOPlatformUUID via ioreg
     if platform.system() == "Darwin":
         try:
             import subprocess
+
             result = subprocess.run(
                 ["ioreg", "-rd1", "-c", "IOPlatformExpertDevice"],
-                capture_output=True, text=True, timeout=5,
+                capture_output=True,
+                text=True,
+                timeout=5,
             )
-            for line in result.stdout.split("\n"):
-                if "IOPlatformUUID" in line:
-                    uuid = line.split('"')[-2]
-                    parts.append(uuid)
-                    break
+            match = re.search(r'"IOPlatformUUID"\s*=\s*"([^"]+)"', result.stdout)
+            if match:
+                parts.append(match.group(1))
         except Exception:
             pass
 
@@ -81,29 +87,37 @@ def _get_fernet():
     if _fernet is not None:
         return _fernet
 
-    try:
-        from cryptography.fernet import Fernet
-        from cryptography.hazmat.primitives import hashes
-        from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-    except ImportError:
-        return None
+    with _fernet_lock:
+        # Double-check after acquiring lock
+        if _fernet is not None:
+            return _fernet
 
-    machine_id = _machine_id()
+        try:
+            from cryptography.fernet import Fernet
+            from cryptography.hazmat.primitives import hashes
+            from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+        except ImportError:
+            return None
 
-    # Derive a 32-byte key using PBKDF2
-    # Salt is fixed per-machine (embedded in machine_id already)
-    kdf = PBKDF2HMAC(
-        algorithm=hashes.SHA256(),
-        length=32,
-        iterations=100_000,
-        salt=b"outlook-cli-v1",
-    )
-    key_bytes = kdf.derive(machine_id)
-    import base64
-    key = base64.urlsafe_b64encode(key_bytes)
+        machine_id = _machine_id()
 
-    _fernet = Fernet(key)
-    return _fernet
+        # Derive a unique salt from the machine ID itself
+        salt = hashlib.sha256(machine_id + b"outlook-cli-salt-v1").digest()[:16]
+
+        # Derive a 32-byte key using PBKDF2
+        kdf = PBKDF2HMAC(
+            algorithm=hashes.SHA256(),
+            length=32,
+            iterations=600_000,  # OWASP 2023 recommendation for PBKDF2-SHA256
+            salt=salt,
+        )
+        key_bytes = kdf.derive(machine_id)
+        import base64
+
+        key = base64.urlsafe_b64encode(key_bytes)
+
+        _fernet = Fernet(key)
+        return _fernet
 
 
 def is_available() -> bool:
@@ -118,6 +132,13 @@ def encrypt(plaintext: str) -> str:
     """
     f = _get_fernet()
     if f is None:
+        import sys
+
+        print(
+            "Warning: cryptography package not installed, storing password as plaintext. "
+            "Install it with: pip install cryptography",
+            file=sys.stderr,
+        )
         return plaintext
 
     token = f.encrypt(plaintext.encode("utf-8")).decode("ascii")
@@ -129,23 +150,36 @@ def decrypt(value: str) -> str:
 
     If the value doesn't have the encrypted prefix, returns it as-is
     (backward compatible with plaintext configs).
+
+    Raises DecryptionError if decryption fails on encrypted data.
     """
     if not value or not value.startswith(ENCRYPTED_PREFIX):
         return value
 
     f = _get_fernet()
     if f is None:
-        # Can't decrypt without cryptography — return raw (will likely fail auth)
-        return value
+        raise DecryptionError(
+            "Cannot decrypt credentials: cryptography package not installed. "
+            "Install it with: pip install cryptography"
+        )
 
-    token = value[len(ENCRYPTED_PREFIX):]
+    token = value[len(ENCRYPTED_PREFIX) :]
     try:
         return f.decrypt(token.encode("ascii")).decode("utf-8")
-    except Exception:
-        # Decryption failed (different machine, corrupted data, etc.)
-        return ""
+    except Exception as e:
+        raise DecryptionError(
+            f"Failed to decrypt credentials (data may be from a different machine "
+            f"or corrupted). Re-run 'outlook-cli setup login' to re-configure. "
+            f"Detail: {e}"
+        ) from e
 
 
 def is_encrypted(value: str) -> bool:
     """Check if a value looks like an encrypted token."""
     return bool(value) and value.startswith(ENCRYPTED_PREFIX)
+
+
+class DecryptionError(Exception):
+    """Raised when credential decryption fails."""
+
+    pass
