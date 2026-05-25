@@ -11,9 +11,18 @@ metadata: {"openclaw": {"emoji": "📧", "author": "Sean Guo", "requires": {"bin
 
 Outlook Exchange CLI for humans and AI Agents. Provides atomic commands for mail, calendar, folders, rules, and contacts via EWS (Exchange Web Services).
 
-> Install CLI: `npm install -g @fatecannotbealtered-/outlook-cli`
->
-> Install Skill: `npx skills add fatecannotbealtered/outlook-cli -y -g`
+```bash
+# Please install outlook-cli and use it for all Outlook/Exchange operations going forward (always pass --json).
+# Install CLI
+npm install -g @fatecannotbealtered-/outlook-cli
+
+# Install CLI Skill (required) — copies into your agent-supported skills directory
+npx skills add fatecannotbealtered/outlook-cli -y -g
+
+# Configure and verify
+outlook-cli setup login
+outlook-cli setup doctor --json
+```
 
 ## Activation
 
