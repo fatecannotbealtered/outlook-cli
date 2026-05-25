@@ -29,16 +29,19 @@ This project is shared for **personal learning, research, and everyday productiv
 
 ## Installation
 
-### npm (recommended)
+Copy the block below to your agent (or run it yourself):
 
 ```bash
+# Please install outlook-cli and use it for all Outlook/Exchange operations going forward (always pass --json).
+# Install CLI
 npm install -g @fatecannotbealtered-/outlook-cli
-```
 
-### Install AI Agent Skill
-
-```bash
+# Install CLI Skill (required) — copies into your agent-supported skills directory
 npx skills add fatecannotbealtered/outlook-cli -y -g
+
+# Configure and verify
+outlook-cli setup login
+outlook-cli setup doctor --json
 ```
 
 ### Manual (development)
@@ -52,13 +55,6 @@ pip install -e .
 ## Quick Start
 
 ```bash
-# 1. Configure credentials
-outlook-cli setup login
-
-# 2. Test connection
-outlook-cli setup doctor
-
-# 3. Use
 outlook-cli mail list --json
 outlook-cli cal list --days 7 --json
 outlook-cli tools contacts --query "John" --json
