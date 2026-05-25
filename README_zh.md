@@ -29,16 +29,19 @@ Outlook Exchange 命令行工具，面向人类和 AI Agent。
 
 ## 安装
 
-### npm（推荐）
+将下面整段复制发给您的 Agent（或自行执行）：
 
 ```bash
+# 请帮我安装 outlook-cli，并记住以后操作 Outlook/Exchange 都使用 outlook-cli（查询时加 --json）。
+# 安装 CLI
 npm install -g @fatecannotbealtered-/outlook-cli
-```
 
-### 安装 AI Agent Skill
-
-```bash
+# 安装 CLI Skill（必需）— 复制到你支持的 skills 目录下
 npx skills add fatecannotbealtered/outlook-cli -y -g
+
+# 配置并验证
+outlook-cli setup login
+outlook-cli setup doctor --json
 ```
 
 ### 手动安装（开发用）
@@ -52,13 +55,6 @@ pip install -e .
 ## 快速开始
 
 ```bash
-# 1. 配置凭据
-outlook-cli setup login
-
-# 2. 测试连接
-outlook-cli setup doctor
-
-# 3. 使用
 outlook-cli mail list --json
 outlook-cli cal list --days 7 --json
 outlook-cli tools contacts --query "张三" --json
