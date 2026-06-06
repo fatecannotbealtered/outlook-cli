@@ -26,6 +26,7 @@ This project is shared for **personal learning, research, and everyday productiv
 - **Audit logging**: JSONL format, monthly rotation
 - **Single binary**: PyInstaller-packaged, no Python runtime needed
 - **npm distribution**: `npm install -g @fatecannotbealtered-/outlook-cli`
+- **Built-in updater**: check and update the CLI with dry-run/confirm safety
 
 ## Installation
 
@@ -42,6 +43,9 @@ npx skills add fatecannotbealtered/outlook-cli -y -g
 # Configure and verify
 outlook-cli setup login
 outlook-cli setup doctor --json
+
+# Check for CLI updates
+outlook-cli update --check
 ```
 
 ### Manual (development)
@@ -69,6 +73,14 @@ outlook-cli tools contacts --query "John" --json
 | `setup login` | Interactive credential setup |
 | `setup status` | Check configuration status |
 | `setup doctor` | Test Exchange connection |
+
+### `update` — Self-update
+
+| Command | Description |
+|---------|-------------|
+| `update --check` | Check the latest available CLI version |
+| `update --dry-run` | Preview the package-manager update command |
+| `update --confirm <token>` | Run the confirmed update command |
 
 ### `mail` — Email Operations (24 commands)
 

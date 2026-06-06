@@ -26,6 +26,7 @@ Outlook Exchange 命令行工具，面向人类和 AI Agent。
 - **审计日志**：JSONL 格式，按月轮转
 - **单文件二进制**：PyInstaller 打包，无需 Python 运行时
 - **npm 分发**：`npm install -g @fatecannotbealtered-/outlook-cli`
+- **内置更新**：通过 dry-run/confirm 安全检查和更新 CLI
 
 ## 安装
 
@@ -42,6 +43,9 @@ npx skills add fatecannotbealtered/outlook-cli -y -g
 # 配置并验证
 outlook-cli setup login
 outlook-cli setup doctor --json
+
+# 检查 CLI 更新
+outlook-cli update --check
 ```
 
 ### 手动安装（开发用）
@@ -69,6 +73,14 @@ outlook-cli tools contacts --query "张三" --json
 | `setup login` | 交互式配置凭据 |
 | `setup status` | 查看配置状态 |
 | `setup doctor` | 测试 Exchange 连接 |
+
+### `update` — 自更新
+
+| 命令 | 说明 |
+|------|------|
+| `update --check` | 检查最新可用 CLI 版本 |
+| `update --dry-run` | 预览将执行的包管理器更新命令 |
+| `update --confirm <token>` | 执行已确认的更新命令 |
 
 ### `mail` — 邮件操作（24 个命令）
 

@@ -71,6 +71,7 @@ class TestCLIHelp:
         assert "rules" in stdout
         assert "tools" in stdout
         assert "setup" in stdout
+        assert "update" in stdout
 
     def test_version(self):
         code, stdout, _ = run_cli("--version")
@@ -193,6 +194,12 @@ class TestGlobalFlags:
         assert code == 0
         assert "--confirm" in stdout
 
+    def test_update_help(self):
+        code, stdout, _ = run_cli("update", "--help")
+        assert code == 0
+        assert "--check" in stdout
+        assert "--manager" in stdout
+
 
 class TestSelfDescription:
     """Test agent-facing self-description commands."""
@@ -203,6 +210,7 @@ class TestSelfDescription:
         data = data_doc(stdout)
         assert data["tool"] == "outlook-cli"
         assert "commands" in data
+        assert any(cmd["path"] == "update" for cmd in data["commands"])
 
     def test_context(self):
         code, stdout, _ = run_cli("context", "--compact")
@@ -348,6 +356,47 @@ class TestPermissionEnforcement:
         assert code == 0
         assert stderr == ""
         assert data_doc(stdout)["confirm_token"].startswith("ct_")
+
+
+class TestUpdateCommand:
+    """Test self-update command contract without executing package managers."""
+
+    def test_update_check_manual(self):
+        code, stdout, _ = run_cli("update", "--check", "--manager", "manual", "--compact")
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["install_method"] == "manual"
+        assert data["supported"] is False
+
+    def test_update_requires_confirm(self):
+        code, _, stderr = run_cli("update", "--manager", "npm", "--target-version", "latest")
+        assert code == 5
+        assert error_code(stderr) == "E_CONFIRMATION_REQUIRED"
+
+    def test_update_dry_run_returns_plan_and_token(self):
+        code, stdout, _ = run_cli(
+            "update",
+            "--manager",
+            "npm",
+            "--target-version",
+            "latest",
+            "--dry-run",
+            "--compact",
+        )
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["confirm_token"].startswith("ct_")
+        assert data["command"] == [
+            "npm",
+            "install",
+            "-g",
+            "@fatecannotbealtered-/outlook-cli@latest",
+        ]
+
+    def test_update_invalid_token_is_conflict(self):
+        code, _, stderr = run_cli("update", "--manager", "manual", "--confirm", "ct_bad")
+        assert code == 6
+        assert error_code(stderr) == "E_CONFLICT"
 
 
 class TestSendSafety:
