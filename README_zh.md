@@ -8,7 +8,7 @@
 
 Outlook Exchange 命令行工具，面向人类和 AI Agent。
 
-从终端管理邮件、日历、文件夹、规则和联系人。专为自动化设计，支持扁平 JSON 输出、权限控制和发送安全机制。
+从终端管理邮件、日历、文件夹、规则和联系人。专为自动化设计，支持 Agent 安全 JSON 输出、权限控制和 dry-run/confirm 安全机制。
 
 [特性](#特性) · [安装](#安装) · [命令总览](#命令总览) · [安全设计](#安全设计) · [项目结构](#项目结构) · [贡献](#贡献)
 
@@ -18,10 +18,10 @@ Outlook Exchange 命令行工具，面向人类和 AI Agent。
 
 ## 特性
 
-- **50 个原子命令**：邮件、日历、文件夹、规则、工具、配置
-- **双模式输出**：`--json` 机器可读，默认人类友好
+- **54 个原子命令**：邮件、日历、文件夹、规则、工具、配置和顶层工具
+- **Agent 安全输出**：默认 JSON envelope；人类可读输出使用 `--format text`
 - **权限系统**：read-only（默认）→ write → full
-- **发送安全**：send/reply/forward 必须加 `--preview` 或 `--send`
+- **写入安全**：写操作必须先 `--dry-run`，再 `--confirm <token>`
 - **只软删除**：所有删除进回收站，无永久删除
 - **审计日志**：JSONL 格式，按月轮转
 - **单文件二进制**：PyInstaller 打包，无需 Python 运行时
@@ -33,7 +33,7 @@ Outlook Exchange 命令行工具，面向人类和 AI Agent。
 将下面整段复制发给您的 Agent（或自行执行）：
 
 ```bash
-# 请帮我安装 outlook-cli，并记住以后操作 Outlook/Exchange 都使用 outlook-cli（查询时加 --json）。
+# 请帮我安装 outlook-cli，并记住以后操作 Outlook/Exchange 都使用 outlook-cli。
 # 安装 CLI
 npm install -g @fatecannotbealtered-/outlook-cli
 
@@ -41,8 +41,9 @@ npm install -g @fatecannotbealtered-/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 # 配置并验证
-outlook-cli setup login
-outlook-cli setup doctor --json
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --dry-run
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --confirm ct_...
+outlook-cli setup doctor
 
 # 检查 CLI 更新
 outlook-cli update --check
@@ -59,9 +60,9 @@ pip install -e .
 ## 快速开始
 
 ```bash
-outlook-cli mail list --json
-outlook-cli cal list --days 7 --json
-outlook-cli tools contacts --query "张三" --json
+outlook-cli mail list
+outlook-cli cal list --days 7
+outlook-cli tools contacts --query "张三"
 ```
 
 ## 命令总览
@@ -70,14 +71,17 @@ outlook-cli tools contacts --query "张三" --json
 
 | 命令 | 说明 |
 |------|------|
-| `setup login` | 交互式配置凭据 |
+| `setup login` | 通过 dry-run/confirm 配置凭据 |
 | `setup status` | 查看配置状态 |
 | `setup doctor` | 测试 Exchange 连接 |
 
-### `update` — 自更新
+### 顶层工具
 
 | 命令 | 说明 |
 |------|------|
+| `reference` | 描述命令、参数、schema 和退出码 |
+| `context` | 报告当前运行环境、配置和凭证状态 |
+| `doctor` | 执行非侵入式环境检查 |
 | `update --check` | 检查最新可用 CLI 版本 |
 | `update --dry-run` | 预览将执行的包管理器更新命令 |
 | `update --confirm <token>` | 执行已确认的更新命令 |
@@ -101,7 +105,7 @@ outlook-cli tools contacts --query "张三" --json
 | `mail restore` | write | 从回收站恢复 |
 | `mail batch` | write | 批量操作 |
 | `mail delete` | write | 软删除（进回收站） |
-| `mail send` | full | 发送邮件（需 `--preview`/`--send`） |
+| `mail send` | full | 通过 dry-run/confirm 发送邮件 |
 | `mail reply` | full | 回复发件人 |
 | `mail reply-all` | full | 回复全部 |
 | `mail forward` | full | 转发邮件 |
@@ -158,9 +162,13 @@ outlook-cli tools contacts --query "张三" --json
 
 | 标志 | 说明 |
 |------|------|
-| `--json` | JSON 输出（机器可读） |
-| `--quiet` | 抑制非错误输出 |
-| `--dry-run` | 预览写操作 |
+| `--format json|text|raw` | 输出格式，默认 `json` |
+| `--json` | `--format json` 的兼容别名 |
+| `--fields a,b,c` | 查询输出只返回指定字段 |
+| `--compact` | 紧凑 JSON 输出 |
+| `--dry-run` | 预览写操作并返回 confirm token |
+| `--confirm TOKEN` | 执行上一次预览确认的操作 |
+| `--quiet` | 抑制 stderr 进度/提示 |
 | `--account EMAIL` | 共享邮箱地址（委托访问） |
 | `--version` | 显示版本 |
 
@@ -180,20 +188,20 @@ outlook-cli tools contacts --query "张三" --json
 
 **AI Agent 无法通过程序修改此文件** — CLI 不提供修改权限的命令，只能由人类手动编辑配置文件。
 
-## 发送安全
+## 写入安全
 
-发送类命令（`send`、`reply`、`reply-all`、`forward`、`draft-send`）必须显式添加安全标志：
+写操作必须走 dry-run/confirm 流程，包括邮箱写入、发送/回复/转发、setup 写配置、本地导出/下载写文件，以及自更新。
 
 ```bash
-# 预览（不发送）
-outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好" --preview
+# 预览，不修改任何内容
+outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好" --dry-run
 
-# 确认发送
-outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好" --send
+# 使用返回的 token 执行
+outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好" --confirm ct_...
 
-# 不加标志：报错
+# 不带 confirm：报错
 outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好"
-# 错误：发送类命令需要 --preview 或 --send
+# 错误：命令需要先 --dry-run，再 --confirm <token>
 ```
 
 ## 环境变量
@@ -214,39 +222,43 @@ outlook-cli mail send --to "a@b.com" --subject "测试" --body "你好"
 
 | 代码 | 退出码 | 含义 |
 |------|--------|------|
-| `CONFIG_ERROR` | 3 | 未配置 |
-| `AUTH_REQUIRED` | 3 | 凭据错误 |
-| `FORBIDDEN` | 5 | 权限不足 |
-| `NOT_FOUND` | 4 | 资源未找到 |
-| `VALIDATION_ERROR` | 2 | 参数错误 |
-| `SERVER_ERROR` | 7 | 服务器错误 |
-| `NETWORK_ERROR` | 7 | 连接失败 |
+| `E_USAGE` / `E_VALIDATION` | 2 | 参数或用法错误 |
+| `E_NOT_FOUND` | 3 | 资源不存在 |
+| `E_AUTH` / `E_FORBIDDEN` / `E_CONFIG` | 4 | 认证、权限或配置失败 |
+| `E_CONFIRMATION_REQUIRED` | 5 | 写操作缺少 confirm token |
+| `E_CONFLICT` | 6 | token 过期或与当前操作不匹配 |
+| `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` | 7 | 可重试的瞬时错误 |
+| `E_TIMEOUT` | 8 | 超时 |
 
 ## JSON 输出
 
-所有命令支持 `--json` 输出机器可读格式，默认**扁平、省 token**（适合 AI Agent）：
-
-```bash
-# 扁平 JSON — 字段精简，token 成本低
-outlook-cli mail list --limit 5 --json
-outlook-cli mail search --sender "boss@company.com" --json
-
-# 管道友好（抑制非 JSON 输出）
-outlook-cli mail list --json --quiet
-
-# 预览写操作，不实际执行
-outlook-cli mail delete --id "abc123" --dry-run --json
-```
-
-错误响应包含机器可读的错误码和可操作的提示：
+所有命令默认输出机器可读 JSON。成功响应使用稳定 envelope：
 
 ```json
 {
-  "error": "邮件未找到: abc123",
-  "errorCode": "NOT_FOUND",
-  "hint": "确认资源 ID 是否正确（来自 list/search 结果）"
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {},
+  "meta": { "duration_ms": 0 }
 }
 ```
+
+错误响应使用同形 envelope：
+
+```json
+{
+  "ok": false,
+  "schema_version": "1.0",
+  "error": {
+    "code": "E_NOT_FOUND",
+    "message": "Mail not found: abc123",
+    "details": {},
+    "retryable": false
+  }
+}
+```
+
+使用 `--compact` 可减少空白，使用 `--fields a,b,c` 可只返回指定字段。
 
 设置 `NO_COLOR=1` 禁用彩色输出（适用于 CI/CD）。
 
@@ -280,13 +292,13 @@ outlook-cli mail delete --id "abc123" --dry-run --json
 
 | 问题 | 解决方案 |
 |------|---------|
-| 未找到配置 | 运行 `outlook-cli setup login` 或设置 `OUTLOOK_EMAIL` 和 `OUTLOOK_PASSWORD` 环境变量 |
+| 未找到配置 | 运行 `outlook-cli setup login --email ... --password ... --dry-run`，再确认返回的 token |
 | 认证失败 | 检查凭据；开启 2FA 时使用应用密码 |
 | 权限不足 | 检查 `~/.outlook-cli/config.json` 中的 `permissions.mode` |
 | 资源未找到 | 从 `list`/`search` 结果中确认 ID |
 | 自动发现失败 | 设置 `OUTLOOK_SERVER` 环境变量或配置文件中的 `server` 字段 |
 | 连接超时 | 检查网络和 Exchange 服务器可用性 |
-| 发送被拒绝 | 在发送命令中添加 `--preview` 或 `--send` 标志 |
+| 需要确认 | 先用同一命令执行 `--dry-run`，再携带 `--confirm <token>` 重试 |
 
 ## 安全设计
 
@@ -302,8 +314,8 @@ outlook-cli mail delete --id "abc123" --dry-run --json
 > - 保持默认 `read-only` 权限，除非确实需要写入/发送能力
 > - 对 AI Agent：默认使用 `read-only`，仅在特定可信工作流中提升到 `write`
 > - **永远不要为无人值守的 AI Agent 授予 `full` 权限** — 发送邮件前必须有人类审核
-> - 使用 `--preview` 预览 Agent 的意图，确认后再 `--send`
-> - 使用 `--dry-run` 测试写操作，不实际执行
+> - 使用 `--dry-run` 预览 Agent 的意图并获取 confirm token
+> - 审核预览后再使用 `--confirm <token>` 执行
 > - 定期检查 `~/.outlook-cli/audit/` 日志，发现异常操作
 >
 > 权限系统的存在是为了保护你。修改权限是一个刻意的、仅限人类的操作 — 请像对待共享邮箱密码一样谨慎。
@@ -322,11 +334,10 @@ outlook-cli mail delete --id "abc123" --dry-run --json
 - AI Agent 无法通过程序提升权限
 - 环境变量 `OUTLOOK_PERMISSIONS` 可覆盖（适用于 CI）
 
-**发送安全（不可逆操作）：**
-- 发送类命令必须显式加 `--preview` 或 `--send` 标志
-- 不加标志：命令**被拒绝**，返回错误
-- `--preview`：输出预览内容，**不发送**
-- `--send`：真正发送邮件
+**写入安全（不可逆操作）：**
+- 写操作必须先 `--dry-run`，再 `--confirm <token>`
+- 不带 confirm：命令会以 `E_CONFIRMATION_REQUIRED` **被拒绝**
+- Confirm token 绑定预览过的操作，并且会过期
 
 **只软删除：**
 - 所有 `delete` 命令将邮件移至回收站（不提供永久删除）
@@ -335,7 +346,7 @@ outlook-cli mail delete --id "abc123" --dry-run --json
 **凭据安全：**
 - 凭据存储在 `~/.outlook-cli/config.json`，权限 `0600`（仅用户可读）
 - 配置目录权限 `0700`
-- `setup login` 输入密码时隐藏显示
+- `setup login` 保存到本地配置的密码会加密
 - 敏感参数（`--password`、`--token`）从审计日志中剥离
 - 凭据不会被记录或传输给第三方
 

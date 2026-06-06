@@ -280,6 +280,7 @@ def _require_confirm(cmd_path: str) -> None:
     ctx = click.get_current_context(silent=True)
     obj = ctx.obj if ctx and ctx.obj else {}
 
+    # --preview is retained as a hidden compatibility alias for pre-1.1 callers.
     if obj.get("dry_run") or "--preview" in sys.argv:
         output.print_json(command_preview_payload(cmd_path))
         sys.exit(0)

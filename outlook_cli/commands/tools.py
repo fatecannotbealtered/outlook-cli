@@ -470,20 +470,19 @@ def tools_oof_get(ctx):
 )
 @click.option("--start", default=None, help="Start time YYYY-MM-DD HH:MM")
 @click.option("--end", default=None, help="End time YYYY-MM-DD HH:MM")
-@click.option("--preview", is_flag=True, help="Preview without enabling")
-@click.option("--send", "do_send", is_flag=True, help="Confirm enabling auto-reply")
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def tools_oof_set(ctx, message, external_message, start, end, preview, do_send):
-    """Enable auto-reply (Out of Office). Requires --preview or --send."""
+    """Enable auto-reply (Out of Office). Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("tools oof set")
 
     if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Enabling auto-reply requires --preview or --send",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Enabling auto-reply requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     from exchangelib import OofSettings, Body
@@ -532,20 +531,19 @@ def tools_oof_set(ctx, message, external_message, start, end, preview, do_send):
 
 
 @tools_oof.command("disable")
-@click.option("--preview", is_flag=True, help="Preview without disabling")
-@click.option("--send", "do_send", is_flag=True, help="Confirm disabling auto-reply")
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def tools_oof_disable(ctx, preview, do_send):
-    """Disable auto-reply (Out of Office). Requires --preview or --send."""
+    """Disable auto-reply (Out of Office). Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("tools oof disable")
 
     if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Disabling auto-reply requires --preview or --send",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Disabling auto-reply requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     if preview:
@@ -583,15 +581,15 @@ def tools_oof_disable(ctx, preview, do_send):
     required=True,
 )
 @click.option("--message", default=None, help="Optional message")
-@click.option("--preview", is_flag=True, help="Preview without responding")
+@click.option("--preview", is_flag=True, hidden=True)
 @click.option(
-    "--send", "do_send", is_flag=True, help="Confirm response (sends to organizer)"
+    "--send", "do_send", is_flag=True, hidden=True
 )
 @click.pass_context
 def tools_respond(
     ctx, event_id, changekey, mail_id, response_action, message, preview, do_send
 ):
-    """Respond to a meeting invitation (accept/decline/tentative). Requires --preview or --send.
+    """Respond to a meeting invitation. Requires dry-run/confirm.
 
     Use --id with a calendar event ID, or --mail-id with a meeting
     invitation mail ID (e.g. from 'outlook-cli mail list').
@@ -602,9 +600,8 @@ def tools_respond(
 
     if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Meeting response requires --preview or --send (response will be sent to organizer)",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Meeting response requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     if not event_id and not mail_id:

@@ -8,7 +8,7 @@ English | [中文](README_zh.md)
 
 Outlook Exchange CLI for humans and AI Agents.
 
-Manage email, calendar, folders, rules, and contacts from the terminal. Built for automation with flat JSON output, permission control, and send safety mechanisms.
+Manage email, calendar, folders, rules, and contacts from the terminal. Built for automation with agent-safe JSON output, permission control, and dry-run/confirm safety mechanisms.
 
 [Features](#features) · [Installation](#installation) · [Commands](#commands) · [Security](#security) · [Project Structure](#project-structure) · [Contributing](#contributing)
 
@@ -18,10 +18,10 @@ This project is shared for **personal learning, research, and everyday productiv
 
 ## Features
 
-- **50 atomic commands** across mail, calendar, folders, rules, tools, and setup
-- **Dual output**: `--json` for machine-readable, human-friendly by default
+- **54 atomic commands** across mail, calendar, folders, rules, tools, setup, and top-level utilities
+- **Agent-safe output**: JSON envelope by default; `--format text` for human-readable output
 - **Permission system**: read-only (default) → write → full
-- **Send safety**: send/reply/forward require `--preview` or `--send` flag
+- **Write safety**: mutating commands require `--dry-run` followed by `--confirm <token>`
 - **Soft delete only**: all deletes go to trash, no permanent deletion
 - **Audit logging**: JSONL format, monthly rotation
 - **Single binary**: PyInstaller-packaged, no Python runtime needed
@@ -33,7 +33,7 @@ This project is shared for **personal learning, research, and everyday productiv
 Copy the block below to your agent (or run it yourself):
 
 ```bash
-# Please install outlook-cli and use it for all Outlook/Exchange operations going forward (always pass --json).
+# Please install outlook-cli and use it for all Outlook/Exchange operations going forward.
 # Install CLI
 npm install -g @fatecannotbealtered-/outlook-cli
 
@@ -41,8 +41,9 @@ npm install -g @fatecannotbealtered-/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 # Configure and verify
-outlook-cli setup login
-outlook-cli setup doctor --json
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --dry-run
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --confirm ct_...
+outlook-cli setup doctor
 
 # Check for CLI updates
 outlook-cli update --check
@@ -59,9 +60,9 @@ pip install -e .
 ## Quick Start
 
 ```bash
-outlook-cli mail list --json
-outlook-cli cal list --days 7 --json
-outlook-cli tools contacts --query "John" --json
+outlook-cli mail list
+outlook-cli cal list --days 7
+outlook-cli tools contacts --query "John"
 ```
 
 ## Commands
@@ -70,14 +71,17 @@ outlook-cli tools contacts --query "John" --json
 
 | Command | Description |
 |---------|-------------|
-| `setup login` | Interactive credential setup |
+| `setup login` | Configure credentials via dry-run/confirm |
 | `setup status` | Check configuration status |
 | `setup doctor` | Test Exchange connection |
 
-### `update` — Self-update
+### Top-level Utilities
 
 | Command | Description |
 |---------|-------------|
+| `reference` | Describe commands, parameters, schemas, and exit codes |
+| `context` | Report current runtime, config, and credential status |
+| `doctor` | Run non-invasive environment checks |
 | `update --check` | Check the latest available CLI version |
 | `update --dry-run` | Preview the package-manager update command |
 | `update --confirm <token>` | Run the confirmed update command |
@@ -101,7 +105,7 @@ outlook-cli tools contacts --query "John" --json
 | `mail restore` | write | Restore from trash |
 | `mail batch` | write | Batch operations |
 | `mail delete` | write | Soft delete (trash) |
-| `mail send` | full | Send email (`--preview`/`--send`) |
+| `mail send` | full | Send email via dry-run/confirm |
 | `mail reply` | full | Reply to sender |
 | `mail reply-all` | full | Reply to all |
 | `mail forward` | full | Forward email |
@@ -158,9 +162,13 @@ outlook-cli tools contacts --query "John" --json
 
 | Flag | Description |
 |------|-------------|
-| `--json` | JSON output (machine-readable) |
-| `--quiet` | Suppress non-error output |
-| `--dry-run` | Preview write operations |
+| `--format json|text|raw` | Output format; default is `json` |
+| `--json` | Compatibility alias for `--format json` |
+| `--fields a,b,c` | Return selected fields for query output |
+| `--compact` | Compact JSON output |
+| `--dry-run` | Preview write operations and return a confirm token |
+| `--confirm TOKEN` | Execute the previously previewed operation |
+| `--quiet` | Suppress stderr progress/prompts |
 | `--account EMAIL` | Shared mailbox email (delegate access) |
 | `--version` | Show version |
 
@@ -180,20 +188,20 @@ Default permission is `read-only`. To enable write/full operations, edit `~/.out
 
 **AI Agents cannot change this file programmatically** — the CLI provides no command to modify permissions. Only humans can edit the config file.
 
-## Send Safety
+## Write Safety
 
-Commands that send email (`send`, `reply`, `reply-all`, `forward`, `draft-send`) require an explicit safety flag:
+Mutating commands require a dry-run/confirm flow. This applies to mailbox writes, send/reply/forward, setup writes, local export/download writes, and self-update.
 
 ```bash
-# Preview without sending
-outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --preview
+# Preview without modifying anything
+outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --dry-run
 
-# Actually send
-outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --send
+# Execute with the returned token
+outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --confirm ct_...
 
-# Without flag: ERROR
+# Without confirm: ERROR
 outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello"
-# Error: send commands require --preview or --send
+# Error: command requires --dry-run followed by --confirm <token>
 ```
 
 ## Environment Variables
@@ -214,39 +222,43 @@ outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello"
 
 | Code | Exit | Meaning |
 |------|------|---------|
-| `CONFIG_ERROR` | 3 | Not configured |
-| `AUTH_REQUIRED` | 3 | Bad credentials |
-| `FORBIDDEN` | 5 | Insufficient permissions |
-| `NOT_FOUND` | 4 | Resource not found |
-| `VALIDATION_ERROR` | 2 | Invalid arguments |
-| `SERVER_ERROR` | 7 | Exchange error |
-| `NETWORK_ERROR` | 7 | Connection failed |
+| `E_USAGE` / `E_VALIDATION` | 2 | Invalid arguments or usage |
+| `E_NOT_FOUND` | 3 | Resource not found |
+| `E_AUTH` / `E_FORBIDDEN` / `E_CONFIG` | 4 | Auth, permission, or configuration failure |
+| `E_CONFIRMATION_REQUIRED` | 5 | Mutating command missing confirm token |
+| `E_CONFLICT` | 6 | Confirm token expired or does not match the operation |
+| `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` | 7 | Retryable transient error |
+| `E_TIMEOUT` | 8 | Timeout |
 
 ## JSON Output
 
-All commands support `--json` for machine-readable output. The default format is **flat and token-efficient** (ideal for AI Agents):
-
-```bash
-# Flat JSON — minimal fields, low token cost
-outlook-cli mail list --limit 5 --json
-outlook-cli mail search --sender "boss@company.com" --json
-
-# Pipe-friendly (suppress non-JSON noise)
-outlook-cli mail list --json --quiet
-
-# Preview write operations without executing
-outlook-cli mail delete --id "abc123" --dry-run --json
-```
-
-Error responses include machine-readable error codes and actionable hints:
+All commands default to machine-readable JSON. Successful responses use a stable envelope:
 
 ```json
 {
-  "error": "Mail not found: abc123",
-  "errorCode": "NOT_FOUND",
-  "hint": "Confirm the resource ID is correct (from list/search results)"
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {},
+  "meta": { "duration_ms": 0 }
 }
 ```
+
+Errors use the same envelope shape:
+
+```json
+{
+  "ok": false,
+  "schema_version": "1.0",
+  "error": {
+    "code": "E_NOT_FOUND",
+    "message": "Mail not found: abc123",
+    "details": {},
+    "retryable": false
+  }
+}
+```
+
+Use `--compact` to reduce whitespace and `--fields a,b,c` to return selected fields.
 
 Set `NO_COLOR=1` to disable colored output (useful in CI/CD).
 
@@ -280,13 +292,13 @@ Credentials stored at `~/.outlook-cli/config.json` (permissions: 0600):
 
 | Issue | Solution |
 |-------|----------|
-| Config not found | Run `outlook-cli setup login` or set `OUTLOOK_EMAIL` and `OUTLOOK_PASSWORD` env vars |
+| Config not found | Run `outlook-cli setup login --email ... --password ... --dry-run`, then confirm the returned token |
 | Authentication failed | Check credentials; for 2FA, use App Password |
 | Permission denied | Check `permissions.mode` in `~/.outlook-cli/config.json` |
 | Resource not found | Verify the ID from `list`/`search` results |
 | Autodiscover failed | Set `OUTLOOK_SERVER` env var or `server` in config |
 | Connection timeout | Check network and Exchange server availability |
-| Send rejected | Add `--preview` or `--send` flag to send commands |
+| Confirmation required | Run the same command with `--dry-run`, then retry with `--confirm <token>` |
 
 ## Security
 
@@ -302,8 +314,8 @@ Credentials stored at `~/.outlook-cli/config.json` (permissions: 0600):
 > - Keep the default `read-only` permission unless you explicitly need write/send capabilities
 > - For AI Agents: use `read-only` by default, and only escalate to `write` for specific trusted workflows
 > - **Never grant `full` permission to unattended AI Agents** — always require human review before sending
-> - Use `--preview` to review what an Agent intends to do before `--send`
-> - Use `--dry-run` to test write operations without executing them
+> - Use `--dry-run` to review what an Agent intends to do and get a confirm token
+> - Use `--confirm <token>` only after reviewing the preview
 > - Monitor `~/.outlook-cli/audit/` logs regularly for unexpected operations
 >
 > The permission system exists to protect you. Changing it is a deliberate, human-only action — treat it with the same caution as sharing your mailbox password.
@@ -322,11 +334,10 @@ Credentials stored at `~/.outlook-cli/config.json` (permissions: 0600):
 - AI Agents cannot escalate privileges programmatically
 - Environment variable `OUTLOOK_PERMISSIONS` can override (useful for CI)
 
-**Send safety (irreversible operations):**
-- Send commands (`send`, `reply`, `reply-all`, `forward`, `draft-send`) require explicit `--preview` or `--send` flag
-- Without flag: command is **rejected** with error
-- `--preview`: outputs what would be sent, does NOT send
-- `--send`: actually sends the email
+**Write safety (irreversible operations):**
+- Mutating commands require `--dry-run` followed by `--confirm <token>`
+- Without confirm: command is **rejected** with `E_CONFIRMATION_REQUIRED`
+- Confirm tokens are bound to the previewed operation and expire
 
 **Soft delete only:**
 - All `delete` commands move items to trash (never permanent)
@@ -335,7 +346,7 @@ Credentials stored at `~/.outlook-cli/config.json` (permissions: 0600):
 **Credential security:**
 - Credentials stored at `~/.outlook-cli/config.json` with `0600` permissions (user-only readable)
 - Config directory created with `0700` permissions
-- Password input is hidden during `setup login`
+- Passwords saved by `setup login` are encrypted in the local config
 - Sensitive flags (`--password`, `--token`) are stripped from audit logs
 - No credentials are logged or transmitted to third parties
 

@@ -1,7 +1,7 @@
 """Integration tests — self-contained round-trip against a real Exchange server.
 
 Every test creates data for the current user only, verifies it, then cleans up.
-No impact on other people. Covers all 42 CLI commands.
+No impact on other people. Covers the main CLI command families.
 
     set OUTLOOK_IT_EMAIL=user@company.com
     set OUTLOOK_IT_PASSWORD=your-password
@@ -28,7 +28,57 @@ pytestmark = pytest.mark.skipif(
 RUN_ID = f"IT-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
 
 
-def run_cli(*args):
+MUTATING_COMMANDS = {
+    ("cal", "create"),
+    ("cal", "delete"),
+    ("cal", "update"),
+    ("folders", "create"),
+    ("folders", "delete"),
+    ("folders", "empty"),
+    ("folders", "move"),
+    ("folders", "rename"),
+    ("mail", "batch"),
+    ("mail", "categorize"),
+    ("mail", "delete"),
+    ("mail", "download-attachment"),
+    ("mail", "draft-delete"),
+    ("mail", "draft-edit"),
+    ("mail", "draft-send"),
+    ("mail", "export"),
+    ("mail", "flag"),
+    ("mail", "forward"),
+    ("mail", "mark"),
+    ("mail", "move"),
+    ("mail", "reply"),
+    ("mail", "reply-all"),
+    ("mail", "restore"),
+    ("mail", "send"),
+    ("rules", "create"),
+    ("rules", "delete"),
+    ("rules", "toggle"),
+    ("rules", "update"),
+    ("tools", "oof", "disable"),
+    ("tools", "oof", "set"),
+    ("tools", "respond"),
+}
+
+
+def _command_path(args):
+    tokens = [arg for arg in args if not arg.startswith("-")]
+    for size in (3, 2):
+        path = tuple(tokens[:size])
+        if path in MUTATING_COMMANDS:
+            return path
+    return tuple(tokens[:2])
+
+
+def _needs_confirm(args):
+    if any(arg in args for arg in ("--dry-run", "--confirm", "--preview")):
+        return False
+    return _command_path(args) in MUTATING_COMMANDS
+
+
+def _run_cli_once(*args):
     """Run outlook-cli subprocess with integration credentials."""
     env = os.environ.copy()
     env["OUTLOOK_EMAIL"] = os.environ["OUTLOOK_IT_EMAIL"]
@@ -52,10 +102,27 @@ def run_cli(*args):
     return result.returncode, stdout, stderr
 
 
+def _parse_doc(text):
+    doc = json.loads(text)
+    return doc.get("data", doc)
+
+
+def run_cli(*args):
+    """Run outlook-cli and auto-confirm mutating integration operations."""
+    if not _needs_confirm(args):
+        return _run_cli_once(*args)
+
+    code, stdout, stderr = _run_cli_once(*args, "--dry-run")
+    if code != 0:
+        return code, stdout, stderr
+    token = _parse_doc(stdout)["confirm_token"]
+    return _run_cli_once(*args, "--confirm", token)
+
+
 def get_json(*args):
     code, stdout, stderr = run_cli(*args)
     assert code == 0, f"Exit {code}: {stderr}"
-    return json.loads(stdout)
+    return _parse_doc(stdout)
 
 
 # ──────────────────────────────────────────────
@@ -80,7 +147,7 @@ class TestStep1Connection:
 # Step 2: Mail round-trip (19 commands)
 # send, search, read, list, thread, mark, flag, categorize,
 # move, restore, batch, export, download-attachment,
-# reply, reply-all, forward (preview), attachment-summary, stats, delete
+# reply, reply-all, forward (dry-run), attachment-summary, stats, delete
 # ──────────────────────────────────────────────
 
 
@@ -103,9 +170,8 @@ class TestStep2MailRoundTrip:
             self.SUBJECT,
             "--body",
             self.BODY,
-            "--send",
         )
-        assert "已发送" in data["message"]
+        assert "sent" in data["message"].lower()
 
     def test_02_search(self):
         """[mail search] Find the email by subject."""
@@ -247,31 +313,31 @@ class TestStep2MailRoundTrip:
         code, stdout, stderr = run_cli(
             "mail", "download-attachment", "--id", mid, "--output-dir", "/tmp"
         )
-        # Either succeeds with 0 attachments, or exits with NOT_FOUND/VALIDATION_ERROR
-        assert code in (0, 2, 4)
+        # Either succeeds with 0 attachments, or exits with E_NOT_FOUND/E_VALIDATION.
+        assert code in (0, 2, 3, 4)
 
-    def test_15_reply_preview(self):
-        """[mail reply] Preview only."""
+    def test_15_reply_dry_run(self):
+        """[mail reply --dry-run] Preview only."""
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
         data = get_json(
-            "mail", "reply", "--id", mid, "--body", "Reply test.", "--preview"
+            "mail", "reply", "--id", mid, "--body", "Reply test.", "--dry-run"
         )
-        assert data["sent"] is False
+        assert data["confirm_token"].startswith("ct_")
 
-    def test_16_reply_all_preview(self):
-        """[mail reply-all] Preview only."""
+    def test_16_reply_all_dry_run(self):
+        """[mail reply-all --dry-run] Preview only."""
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
         data = get_json(
-            "mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--preview"
+            "mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--dry-run"
         )
-        assert data["sent"] is False
+        assert data["confirm_token"].startswith("ct_")
 
-    def test_17_forward_preview(self):
-        """[mail forward] Preview only."""
+    def test_17_forward_dry_run(self):
+        """[mail forward --dry-run] Preview only."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
         mid = self.__class__._mid
         if not mid:
@@ -285,9 +351,9 @@ class TestStep2MailRoundTrip:
             email,
             "--body",
             "Fwd test.",
-            "--preview",
+            "--dry-run",
         )
-        assert data["sent"] is False
+        assert data["confirm_token"].startswith("ct_")
 
     def test_18_batch_preview(self):
         """[mail batch] Batch mark-read on test email."""
@@ -348,9 +414,8 @@ class TestStep2bSendVariants:
             "--body",
             html_body,
             "--html",
-            "--send",
         )
-        assert "已发送" in data["message"]
+        assert "sent" in data["message"].lower()
 
     def test_02_verify_html(self):
         """[mail search + read] Verify HTML email received."""
@@ -394,9 +459,8 @@ class TestStep2bSendVariants:
             "See attached file.",
             "--attachments",
             str(att_file),
-            "--send",
         )
-        assert "已发送" in data["message"]
+        assert "sent" in data["message"].lower()
 
     def test_04_verify_attachment(self):
         """[mail search + read] Verify attachment email received."""
@@ -427,12 +491,12 @@ class TestStep2bSendVariants:
     # --- Reply send ---
 
     def test_05_reply_send(self):
-        """[mail reply --send] Send a real reply."""
+        """[mail reply] Send a real reply."""
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply to")
         data = get_json(
-            "mail", "reply", "--id", mid, "--body", "This is a real reply.", "--send"
+            "mail", "reply", "--id", mid, "--body", "This is a real reply."
         )
         assert data["sent"] is True
 
@@ -451,19 +515,19 @@ class TestStep2bSendVariants:
     # --- Reply-all send ---
 
     def test_07_reply_all_send(self):
-        """[mail reply-all --send] Send a real reply-all."""
+        """[mail reply-all] Send a real reply-all."""
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply-all to")
         data = get_json(
-            "mail", "reply-all", "--id", mid, "--body", "This is a reply-all.", "--send"
+            "mail", "reply-all", "--id", mid, "--body", "This is a reply-all."
         )
         assert data["sent"] is True
 
     # --- Forward send ---
 
     def test_08_forward_send(self):
-        """[mail forward --send] Forward email to self."""
+        """[mail forward] Forward email to self."""
         email = os.environ["OUTLOOK_IT_EMAIL"]
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
@@ -477,7 +541,6 @@ class TestStep2bSendVariants:
             email,
             "--body",
             "Forwarding this.",
-            "--send",
         )
         assert data["sent"] is True
 
@@ -604,13 +667,13 @@ class TestStep3DraftRoundTrip:
         )
         assert code == 0
 
-    def test_05_draft_send_preview(self):
-        """[mail draft-send --preview]"""
+    def test_05_draft_send_dry_run(self):
+        """[mail draft-send --dry-run]"""
         did = self.__class__._draft_id
         if not did:
             pytest.skip("draft not created")
-        data = get_json("mail", "draft-send", "--id", did, "--preview")
-        assert data.get("sent") is False
+        data = get_json("mail", "draft-send", "--id", did, "--dry-run")
+        assert data["confirm_token"].startswith("ct_")
 
     def test_06_delete_draft(self):
         """[mail draft-delete]"""
@@ -823,7 +886,7 @@ class TestStep6RulesRoundTrip:
             "--mark-read",
         )
         assert code == 0, f"Exit {code}: {stderr}"
-        data = json.loads(stdout)
+        data = _parse_doc(stdout)
         self.__class__._rule_id = data.get("id") or data.get("rule", {}).get("id")
 
     def test_03_update(self):
@@ -895,7 +958,7 @@ class TestStep7Tools:
         code, stdout, stderr = run_cli("tools", "rooms", "--limit", "5")
         if code != 0:
             pytest.skip("Rooms not configured on this server")
-        data = json.loads(stdout)
+        data = _parse_doc(stdout)
         assert "room_lists" in data or "count" in data
 
     def test_04_rooms_free_busy(self):
@@ -904,7 +967,7 @@ class TestStep7Tools:
         code, stdout, _ = run_cli("tools", "rooms", "--limit", "1")
         if code != 0:
             pytest.skip("No rooms available")
-        data = json.loads(stdout)
+        data = _parse_doc(stdout)
         # If room_lists exists and has rooms, query free-busy
         has_rooms = False
         for rl in data.get("room_lists", []):
@@ -971,5 +1034,5 @@ class TestStep7Tools:
         code, _, stderr = run_cli(
             "tools", "respond", "--id", "fake-nonexistent-id", "--action", "accept"
         )
-        # Should fail with NOT_FOUND (4) since ID doesn't exist
-        assert code == 4
+        # Should fail with E_NOT_FOUND since ID doesn't exist.
+        assert code == 3
