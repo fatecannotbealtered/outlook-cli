@@ -58,6 +58,16 @@ WRITE_COMMANDS = frozenset(
     }
 )
 
+# Commands that only write local files/config and do not require elevated
+# Outlook mailbox permissions, but still must use dry-run/confirm.
+LOCAL_WRITE_COMMANDS = frozenset(
+    {
+        "mail export",
+        "mail download-attachment",
+        "setup login",
+    }
+)
+
 
 def config_dir() -> Path:
     """Return ~/.outlook-cli/"""
@@ -222,27 +232,70 @@ def get_permission_mode(cfg: dict = None) -> str:
 def check_permission(cmd_path: str) -> None:
     """Check if the current permission level allows this command.
 
-    Exits with code 5 (FORBIDDEN) if not allowed.
+    Exits with code 4 (E_FORBIDDEN) if not allowed. Mutating commands then
+    require the dry-run/confirm-token flow.
     """
     mode = get_permission_mode()
     level = PERMISSION_LEVELS.get(mode, 0)
+    is_mutating = False
 
     if cmd_path in FULL_COMMANDS:
+        is_mutating = True
         if level < PERMISSION_LEVELS["full"]:
             _deny(cmd_path, mode, "full")
     elif cmd_path in WRITE_COMMANDS:
+        is_mutating = True
         if level < PERMISSION_LEVELS["write"]:
             _deny(cmd_path, mode, "write")
+    elif cmd_path in LOCAL_WRITE_COMMANDS:
+        is_mutating = True
     # read-only commands always allowed
+    if is_mutating:
+        _require_confirm(cmd_path)
 
 
 def _deny(cmd_path: str, current: str, required: str) -> None:
-    from .output import error_json
+    from . import output
 
-    error_json(
+    output.handle_error(
         f"Insufficient permission: mode is '{current}', "
         f"command '{cmd_path}' requires '{required}' or higher",
-        code="FORBIDDEN",
-        hint=f"Edit {config_path()} and set permissions.mode to '{required}'",
+        code="E_FORBIDDEN",
+        details={
+            "command": cmd_path,
+            "current": current,
+            "required": required,
+            "hint": f"Edit {config_path()} and set permissions.mode to '{required}'",
+        },
     )
-    sys.exit(5)
+
+
+def _require_confirm(cmd_path: str) -> None:
+    """Enforce dry-run -> confirm for mutating operations."""
+    import click
+
+    from . import output
+    from .confirmation import command_preview_payload, validate_token
+
+    ctx = click.get_current_context(silent=True)
+    obj = ctx.obj if ctx and ctx.obj else {}
+
+    if obj.get("dry_run") or "--preview" in sys.argv:
+        output.print_json(command_preview_payload(cmd_path))
+        sys.exit(0)
+
+    token = obj.get("confirm")
+    if not token:
+        output.handle_error(
+            f"Command '{cmd_path}' requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
+            details={"command": cmd_path},
+        )
+
+    valid, reason = validate_token(token)
+    if not valid:
+        output.handle_error(
+            "Confirm token is invalid for this operation",
+            "E_CONFLICT",
+            details={"command": cmd_path, "reason": reason},
+        )

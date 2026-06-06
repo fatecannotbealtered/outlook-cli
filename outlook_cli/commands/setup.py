@@ -28,36 +28,42 @@ def setup_group():
     "--timezone", default="Asia/Shanghai", help="Timezone (default: Asia/Shanghai)"
 )
 @click.option("--skip-test", is_flag=True, help="Skip connection test")
-def setup_login(email, password, server, timezone, skip_test):
+@click.pass_context
+def setup_login(ctx, email, password, server, timezone, skip_test):
     """Configure Exchange credentials.
 
-    Interactive (human):
-        outlook-cli setup login
-
     Non-interactive (Agent):
-        outlook-cli setup login --email user@co.com --password P@ss
+        outlook-cli setup login --email user@co.com --password P@ss --dry-run
+        outlook-cli setup login --email user@co.com --password P@ss --confirm <token>
     """
     import os
+    import sys
 
-    # Prompt if not provided and terminal is interactive
+    from ..confirmation import command_preview_payload, validate_token
+
     if email is None:
-        if sys.stdin.isatty():
-            email = click.prompt("Outlook email")
-        else:
-            output.handle_error(
-                "--email is required in non-interactive mode",
-                "VALIDATION_ERROR",
-                exit_code=2,
-            )
+        output.handle_error("--email is required", "E_VALIDATION")
     if password is None:
-        if sys.stdin.isatty():
-            password = click.prompt("Password", hide_input=True)
-        else:
-            output.handle_error(
-                "--password is required in non-interactive mode",
-                "VALIDATION_ERROR",
-                exit_code=2,
-            )
+        output.handle_error("--password is required", "E_VALIDATION")
+
+    if ctx.obj.get("dry_run"):
+        output.print_json(command_preview_payload("setup login"))
+        return
+
+    confirm = ctx.obj.get("confirm")
+    if not confirm:
+        output.handle_error(
+            "Command 'setup login' requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
+            details={"command": "setup login"},
+        )
+    valid, reason = validate_token(confirm)
+    if not valid:
+        output.handle_error(
+            "Confirm token is invalid for this operation",
+            "E_CONFLICT",
+            details={"command": "setup login", "reason": reason},
+        )
 
     cfg = {
         "email": email.strip(),
@@ -90,10 +96,10 @@ def setup_login(email, password, server, timezone, skip_test):
                 output.info(f"Inbox: {inbox_count} messages")
         except SystemExit:
             output.error("Connection failed. Check credentials.")
-            sys.exit(3)
+            sys.exit(4)
         except Exception as e:
             output.error(f"Connection failed: {e}")
-            sys.exit(3)
+            sys.exit(4)
         finally:
             for k in ("OUTLOOK_EMAIL", "OUTLOOK_PASSWORD", "OUTLOOK_SERVER"):
                 os.environ.pop(k, None)
@@ -110,7 +116,6 @@ def setup_login(email, password, server, timezone, skip_test):
     if output.is_json():
         output.print_json(
             {
-                "status": "ok",
                 "email": cfg["email"],
                 "server": cfg["server"] or "(auto-discover)",
                 "timezone": cfg["timezone"],

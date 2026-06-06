@@ -479,7 +479,7 @@ def tools_oof_set(ctx, message, external_message, start, end, preview, do_send):
 
     check_permission("tools oof set")
 
-    if not preview and not do_send:
+    if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Enabling auto-reply requires --preview or --send",
             "VALIDATION_ERROR",
@@ -541,7 +541,7 @@ def tools_oof_disable(ctx, preview, do_send):
 
     check_permission("tools oof disable")
 
-    if not preview and not do_send:
+    if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Disabling auto-reply requires --preview or --send",
             "VALIDATION_ERROR",
@@ -600,7 +600,7 @@ def tools_respond(
 
     check_permission("tools respond")
 
-    if not preview and not do_send:
+    if not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Meeting response requires --preview or --send (response will be sent to organizer)",
             "VALIDATION_ERROR",

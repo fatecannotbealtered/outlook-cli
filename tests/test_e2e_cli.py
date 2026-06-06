@@ -37,6 +37,27 @@ def run_cli(*args, env_overrides=None):
     return result.returncode, stdout, stderr
 
 
+def parse_json_doc(text):
+    """Parse a JSON document from stdout or stderr."""
+    start = text.find("{")
+    assert start >= 0, "expected JSON output"
+    return json.loads(text[start:].strip())
+
+
+def data_doc(stdout):
+    return parse_json_doc(stdout)["data"]
+
+
+def error_code(stderr):
+    return parse_json_doc(stderr)["error"]["code"]
+
+
+def confirm_token_for(*args, env_overrides=None):
+    code, stdout, stderr = run_cli(*args, "--dry-run", env_overrides=env_overrides)
+    assert code == 0, stderr
+    return data_doc(stdout)["confirm_token"]
+
+
 class TestCLIHelp:
     """Test that all commands are registered and help works."""
 
@@ -154,7 +175,46 @@ class TestGlobalFlags:
 
     def test_account_flag_in_help(self):
         code, stdout, _ = run_cli("--help")
+        assert code == 0
         assert "--account" in stdout
+
+    def test_format_flag_in_help(self):
+        code, stdout, _ = run_cli("--help")
+        assert code == 0
+        assert "--format" in stdout
+
+    def test_fields_flag_in_help(self):
+        code, stdout, _ = run_cli("--help")
+        assert code == 0
+        assert "--fields" in stdout
+
+    def test_confirm_flag_in_help(self):
+        code, stdout, _ = run_cli("--help")
+        assert code == 0
+        assert "--confirm" in stdout
+
+
+class TestSelfDescription:
+    """Test agent-facing self-description commands."""
+
+    def test_reference(self):
+        code, stdout, _ = run_cli("reference", "--compact")
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["tool"] == "outlook-cli"
+        assert "commands" in data
+
+    def test_context(self):
+        code, stdout, _ = run_cli("context", "--compact")
+        assert code == 0
+        data = data_doc(stdout)
+        assert "configured" in data
+        assert "credentials" in data
+
+    def test_doctor(self):
+        code, stdout, _ = run_cli("doctor", "--compact")
+        assert code == 0
+        assert "checks" in data_doc(stdout)
 
 
 class TestPermissionEnforcement:
@@ -177,8 +237,8 @@ class TestPermissionEnforcement:
             "--preview",
             env_overrides=self._env_with_mode("read-only"),
         )
-        assert code == 5
-        assert "FORBIDDEN" in stderr or "权限不足" in stderr
+        assert code == 4
+        assert error_code(stderr) == "E_FORBIDDEN"
 
     def test_read_only_blocks_reply(self):
         code, _, stderr = run_cli(
@@ -192,8 +252,8 @@ class TestPermissionEnforcement:
             "--preview",
             env_overrides=self._env_with_mode("read-only"),
         )
-        assert code == 5
-        assert "FORBIDDEN" in stderr or "权限不足" in stderr
+        assert code == 4
+        assert error_code(stderr) == "E_FORBIDDEN"
 
     def test_read_only_blocks_delete(self):
         code, _, stderr = run_cli(
@@ -204,8 +264,8 @@ class TestPermissionEnforcement:
             "fake-id",
             env_overrides=self._env_with_mode("read-only"),
         )
-        assert code == 5
-        assert "FORBIDDEN" in stderr or "权限不足" in stderr
+        assert code == 4
+        assert error_code(stderr) == "E_FORBIDDEN"
 
     def test_read_only_blocks_cal_create(self):
         code, _, stderr = run_cli(
@@ -220,10 +280,11 @@ class TestPermissionEnforcement:
             "2026-05-01 11:00",
             env_overrides=self._env_with_mode("read-only"),
         )
-        assert code == 5
+        assert code == 4
+        assert error_code(stderr) == "E_FORBIDDEN"
 
-    def test_write_allows_move(self):
-        """Write permission allows move (will fail on connection, not permission)."""
+    def test_write_requires_confirm_for_move(self):
+        """Write permission still requires dry-run/confirm."""
         code, _, stderr = run_cli(
             "--json",
             "mail",
@@ -234,9 +295,23 @@ class TestPermissionEnforcement:
             "Archive",
             env_overrides=self._env_with_mode("write"),
         )
-        # Should NOT be exit 5 (permission denied)
-        # It will be exit 3 (config error) or 7 (connection error) - that's OK
-        assert code != 5
+        assert code == 5
+        assert error_code(stderr) == "E_CONFIRMATION_REQUIRED"
+
+    def test_write_move_dry_run_returns_token(self):
+        code, stdout, _ = run_cli(
+            "--json",
+            "mail",
+            "move",
+            "--id",
+            "fake-id",
+            "--folder",
+            "Archive",
+            "--dry-run",
+            env_overrides=self._env_with_mode("write"),
+        )
+        assert code == 0
+        assert data_doc(stdout)["confirm_token"].startswith("ct_")
 
     def test_write_blocks_send(self):
         code, _, stderr = run_cli(
@@ -252,11 +327,12 @@ class TestPermissionEnforcement:
             "--preview",
             env_overrides=self._env_with_mode("write"),
         )
-        assert code == 5
+        assert code == 4
+        assert error_code(stderr) == "E_FORBIDDEN"
 
     def test_full_allows_send_preview(self):
         """Full permission allows send (will fail on connection, not permission)."""
-        code, _, stderr = run_cli(
+        code, stdout, stderr = run_cli(
             "--json",
             "mail",
             "send",
@@ -269,18 +345,19 @@ class TestPermissionEnforcement:
             "--preview",
             env_overrides=self._env_with_mode("full"),
         )
-        # Should NOT be exit 5 (permission denied)
-        assert code != 5
+        assert code == 0
+        assert stderr == ""
+        assert data_doc(stdout)["confirm_token"].startswith("ct_")
 
 
 class TestSendSafety:
-    """Test that send commands require --preview or --send."""
+    """Test that send commands require dry-run/confirm."""
 
     def _env_full(self):
         return {"OUTLOOK_PERMISSIONS": "full"}
 
     def test_send_without_flag_rejected(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "mail",
             "send",
@@ -292,13 +369,25 @@ class TestSendSafety:
             "Hello",
             env_overrides=self._env_full(),
         )
-        assert code == 2
-        assert (
-            "VALIDATION_ERROR" in stderr or "--preview" in stderr or "--send" in stderr
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
+            "--confirm",
+            token,
+            env_overrides=self._env_full(),
         )
+        assert code == 4
+        assert error_code(stderr) == "E_CONFIG"
 
     def test_reply_without_flag_rejected(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "mail",
             "reply",
@@ -308,10 +397,23 @@ class TestSendSafety:
             "Hi",
             env_overrides=self._env_full(),
         )
-        assert code == 2
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "reply",
+            "--id",
+            "fake-id",
+            "--body",
+            "Hi",
+            "--confirm",
+            token,
+            env_overrides=self._env_full(),
+        )
+        assert code == 4
+        assert error_code(stderr) == "E_CONFIG"
 
     def test_forward_without_flag_rejected(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "mail",
             "forward",
@@ -321,10 +423,23 @@ class TestSendSafety:
             "test@test.com",
             env_overrides=self._env_full(),
         )
-        assert code == 2
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "forward",
+            "--id",
+            "fake-id",
+            "--to",
+            "test@test.com",
+            "--confirm",
+            token,
+            env_overrides=self._env_full(),
+        )
+        assert code == 4
+        assert error_code(stderr) == "E_CONFIG"
 
     def test_draft_send_without_flag_rejected(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "mail",
             "draft-send",
@@ -332,7 +447,18 @@ class TestSendSafety:
             "fake-id",
             env_overrides=self._env_full(),
         )
-        assert code == 2
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "draft-send",
+            "--id",
+            "fake-id",
+            "--confirm",
+            token,
+            env_overrides=self._env_full(),
+        )
+        assert code == 4
+        assert error_code(stderr) == "E_CONFIG"
 
 
 class TestRespondValidation:
@@ -342,7 +468,7 @@ class TestRespondValidation:
         return {"OUTLOOK_PERMISSIONS": "write"}
 
     def test_respond_requires_preview_or_send(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "tools",
             "respond",
@@ -350,11 +476,21 @@ class TestRespondValidation:
             "accept",
             env_overrides=self._env_write(),
         )
+        code, _, stderr = run_cli(
+            "--json",
+            "tools",
+            "respond",
+            "--action",
+            "accept",
+            "--confirm",
+            token,
+            env_overrides=self._env_write(),
+        )
         assert code == 2
-        assert "preview" in stderr.lower() or "send" in stderr.lower()
+        assert error_code(stderr) == "E_VALIDATION"
 
     def test_respond_requires_id_or_mail_id(self):
-        code, _, stderr = run_cli(
+        token = confirm_token_for(
             "--json",
             "tools",
             "respond",
@@ -363,8 +499,19 @@ class TestRespondValidation:
             "--send",
             env_overrides=self._env_write(),
         )
+        code, _, stderr = run_cli(
+            "--json",
+            "tools",
+            "respond",
+            "--action",
+            "accept",
+            "--send",
+            "--confirm",
+            token,
+            env_overrides=self._env_write(),
+        )
         assert code == 2
-        assert "--id" in stderr or "--mail-id" in stderr
+        assert error_code(stderr) == "E_VALIDATION"
 
 
 class TestErrorFormat:
@@ -377,14 +524,14 @@ class TestErrorFormat:
             "list",
             env_overrides={"OUTLOOK_EMAIL": "", "OUTLOOK_PASSWORD": ""},
         )
-        assert code == 3
+        assert code == 4
         # stderr should contain JSON error
         lines = [ln for ln in stderr.strip().split("\n") if ln.strip()]
         json_found = False
         for line in lines:
             try:
                 data = json.loads(line)
-                if "error" in data and "errorCode" in data:
+                if data.get("ok") is False and data.get("error", {}).get("code"):
                     json_found = True
                     break
             except json.JSONDecodeError:

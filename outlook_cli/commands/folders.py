@@ -243,7 +243,7 @@ def folders_empty(ctx, name, force):
     if not folder:
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
-    if not force and not output.is_json():
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(
             f"Empty folder '{name}'? All items will be moved to trash.", abort=True
         )
@@ -278,7 +278,7 @@ def folders_delete(ctx, name, force):
     if not folder:
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
-    if not force and not output.is_json():
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(f"Delete folder '{name}'?", abort=True)
 
     if ctx.obj.get("dry_run"):

@@ -5,6 +5,7 @@ Supports mail, calendar, folders, rules, and utility operations.
 """
 
 import functools
+import os
 import sys
 import time
 
@@ -20,7 +21,8 @@ _start_time: float = 0
 _exit_code: int = 0
 
 # Global flags that work at any position (before or after subcommand)
-_GLOBAL_FLAGS = {"--json", "--quiet", "--dry-run"}
+_GLOBAL_BOOL_FLAGS = {"--json", "--quiet", "--dry-run", "--compact"}
+_GLOBAL_VALUE_FLAGS = {"--format", "--fields", "--confirm", "--account"}
 
 
 class FlexibleGroup(click.Group):
@@ -37,14 +39,15 @@ class FlexibleGroup(click.Group):
         i = 0
         while i < len(args):
             arg = args[i]
-            if arg in _GLOBAL_FLAGS:
+            if arg in _GLOBAL_BOOL_FLAGS:
                 global_args.append(arg)
-            elif arg.startswith("--json"):
-                # Handle --json=value form too
+            elif any(arg.startswith(f"{flag}=") for flag in _GLOBAL_VALUE_FLAGS):
                 global_args.append(arg)
-            elif i > 0 and args[i - 1] in _GLOBAL_FLAGS:
-                # This is a value for a global flag (e.g., --account value)
+            elif arg in _GLOBAL_VALUE_FLAGS:
                 global_args.append(arg)
+                if i + 1 < len(args):
+                    global_args.append(args[i + 1])
+                    i += 1
             else:
                 remaining.append(arg)
             i += 1
@@ -54,15 +57,29 @@ class FlexibleGroup(click.Group):
 @click.group(cls=FlexibleGroup)
 @click.version_option(__version__, prog_name="outlook-cli")
 @click.option(
-    "--json", "json_mode", is_flag=True, help="JSON output (machine-readable)"
+    "--format",
+    "format_mode",
+    type=click.Choice(["json", "text", "raw"]),
+    default="json",
+    show_default=True,
+    help="Output format",
 )
-@click.option("--quiet", is_flag=True, help="Suppress non-JSON stdout output")
+@click.option(
+    "--json",
+    "json_alias",
+    is_flag=True,
+    help="Compatibility alias for --format json",
+)
+@click.option("--fields", default="", help="Comma-separated fields to return")
+@click.option("--compact", is_flag=True, help="Compact JSON output")
+@click.option("--quiet", is_flag=True, help="Suppress stderr progress/prompts")
 @click.option(
     "--dry-run", is_flag=True, help="Preview write operations without executing"
 )
+@click.option("--confirm", default=None, help="Confirm token from --dry-run")
 @click.option("--account", default=None, help="Shared mailbox email (delegate access)")
 @click.pass_context
-def cli(ctx, json_mode, quiet, dry_run, account):
+def cli(ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, account):
     """Outlook Exchange CLI for humans and AI Agents.
 
     Manage email, calendar, folders, rules, and contacts from the terminal.
@@ -72,12 +89,22 @@ def cli(ctx, json_mode, quiet, dry_run, account):
     _exit_code = 0
 
     ctx.ensure_object(dict)
-    ctx.obj["json"] = json_mode
+    effective_format = "json" if json_alias else format_mode
+    ctx.obj["format"] = effective_format
+    ctx.obj["json"] = effective_format == "json"
     ctx.obj["quiet"] = quiet
     ctx.obj["dry_run"] = dry_run
+    ctx.obj["confirm"] = confirm
     ctx.obj["account"] = account
+    ctx.obj["fields"] = fields
+    ctx.obj["compact"] = compact
 
-    output.init(json_mode, quiet)
+    output.init(
+        format_mode=effective_format,
+        quiet=quiet,
+        compact=compact,
+        fields=fields,
+    )
 
     # Register audit hook to fire when the command finishes
     @ctx.call_on_close
@@ -123,9 +150,9 @@ def _register_commands():
     cli.add_command(rules_group, "rules")
     cli.add_command(tools_group, "tools")
     cli.add_command(setup_group, "setup")
-
-
-_register_commands()
+    cli.add_command(reference_cmd, "reference")
+    cli.add_command(context_cmd, "context")
+    cli.add_command(doctor_cmd, "doctor")
 
 
 # --- Helper decorators ---
@@ -159,16 +186,203 @@ def main():
     global _exit_code
     try:
         cli(standalone_mode=False)
+    except click.exceptions.Exit as e:
+        code = e.exit_code if isinstance(e.exit_code, int) else 0
+        _exit_code = code
+        raise SystemExit(code)
     except SystemExit as e:
         code = e.code if isinstance(e.code, int) else 1
         _exit_code = code
         raise SystemExit(code)
     except click.Abort:
         _exit_code = 130
-        raise SystemExit(130)
+        output.handle_error("Aborted", "E_USAGE", exit_code=2)
+    except click.ClickException as e:
+        _exit_code = 2
+        output.handle_error(e.format_message(), "E_USAGE", exit_code=2)
     except Exception as e:
-        _exit_code = 7
+        _exit_code = output.exit_code_for("E_SERVER", fallback=7)
         output.handle_api_error(e)
+
+
+# --- Self-description commands ---
+
+
+def _command_type(path: str) -> str:
+    from .config import FULL_COMMANDS, LOCAL_WRITE_COMMANDS, WRITE_COMMANDS
+
+    if path in FULL_COMMANDS:
+        return "full"
+    if path in WRITE_COMMANDS:
+        return "write"
+    if path in LOCAL_WRITE_COMMANDS:
+        return "local-write"
+    return "read"
+
+
+def _param_to_dict(param: click.Parameter) -> dict:
+    names = list(getattr(param, "opts", []) or [param.name])
+    secondary = list(getattr(param, "secondary_opts", []) or [])
+    if secondary:
+        names.extend(secondary)
+    return {
+        "name": param.name,
+        "opts": names,
+        "required": bool(getattr(param, "required", False)),
+        "multiple": bool(getattr(param, "multiple", False)),
+        "type": str(getattr(param, "type", "")),
+        "default": getattr(param, "default", None),
+        "is_flag": bool(getattr(param, "is_flag", False)),
+        "help": getattr(param, "help", "") or "",
+    }
+
+
+def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[dict]:
+    commands = []
+    for name, command in sorted(group.commands.items()):
+        path = (*prefix, name)
+        path_str = " ".join(path)
+        commands.append(
+            {
+                "name": name,
+                "path": path_str,
+                "type": _command_type(path_str),
+                "help": command.get_short_help_str(limit=120),
+                "params": [_param_to_dict(p) for p in command.params],
+                "children": _collect_commands(command, path)
+                if isinstance(command, click.Group)
+                else [],
+            }
+        )
+    return commands
+
+
+@click.command("reference")
+def reference_cmd():
+    """Describe CLI commands, parameters, schemas, and exit codes."""
+    data = {
+        "tool": "outlook-cli",
+        "version": __version__,
+        "schema_version": output.SCHEMA_VERSION,
+        "output": {
+            "default_format": "json",
+            "envelope": {
+                "ok": "boolean",
+                "schema_version": "string",
+                "data": "object",
+                "meta": {"duration_ms": "integer"},
+                "error": {
+                    "code": "E_*",
+                    "message": "string",
+                    "details": "object",
+                    "retryable": "boolean",
+                },
+            },
+        },
+        "global_options": [
+            "--format json|text|raw",
+            "--json",
+            "--fields <a,b,c>",
+            "--compact",
+            "--dry-run",
+            "--confirm <token>",
+            "--quiet",
+            "--account <email>",
+        ],
+        "exit_codes": {
+            "0": "success",
+            "1": "generic error",
+            "2": "usage or validation error",
+            "3": "resource not found",
+            "4": "permission, auth, or configuration failure",
+            "5": "confirmation required",
+            "6": "precondition conflict or invalid confirm token",
+            "7": "retryable transient error",
+            "8": "timeout",
+        },
+        "commands": _collect_commands(cli),
+    }
+    output.print_json(data)
+
+
+@click.command("context")
+def context_cmd():
+    """Describe the current runtime, config, and credential status."""
+    from .config import config_path, get_permission_mode, load
+
+    cfg = load()
+    data = {
+        "env": os.environ.get("OUTLOOK_ENV", "default"),
+        "account": cfg.get("shared_mailbox") or cfg.get("email", ""),
+        "configured": bool(cfg.get("email") and cfg.get("password")),
+        "config": {
+            "config_file": str(config_path()),
+            "server": cfg.get("server", "") or "(auto-discover)",
+            "timezone": cfg.get("timezone", "Asia/Shanghai"),
+            "permissions": get_permission_mode(cfg),
+            "has_password": bool(cfg.get("password")),
+        },
+        "credentials": {
+            "OUTLOOK_EMAIL": bool(os.environ.get("OUTLOOK_EMAIL")),
+            "OUTLOOK_PASSWORD": bool(os.environ.get("OUTLOOK_PASSWORD")),
+            "OUTLOOK_SERVER": bool(os.environ.get("OUTLOOK_SERVER")),
+            "OUTLOOK_SHARED_MAILBOX": bool(os.environ.get("OUTLOOK_SHARED_MAILBOX")),
+        },
+    }
+    output.print_json(data)
+
+
+@click.command("doctor")
+def doctor_cmd():
+    """Run non-invasive environment checks."""
+    from .config import PERMISSION_LEVELS, config_path, get_permission_mode, load
+
+    checks = []
+    cfg = load()
+    path = config_path()
+    checks.append(
+        {
+            "check": "config_file",
+            "status": "pass" if path.exists() else "warn",
+            "fix": None if path.exists() else "run setup login --dry-run, then setup login --confirm <token>",
+            "details": {"path": str(path)},
+        }
+    )
+    checks.append(
+        {
+            "check": "credentials",
+            "status": "pass" if cfg.get("email") and cfg.get("password") else "fail",
+            "fix": None if cfg.get("email") and cfg.get("password") else "set OUTLOOK_EMAIL/OUTLOOK_PASSWORD or run setup login",
+        }
+    )
+    mode = get_permission_mode(cfg)
+    checks.append(
+        {
+            "check": "permissions",
+            "status": "pass" if mode in PERMISSION_LEVELS else "fail",
+            "fix": None if mode in PERMISSION_LEVELS else "set permissions.mode to read-only, write, or full",
+            "details": {"mode": mode},
+        }
+    )
+    try:
+        import exchangelib  # noqa: F401
+
+        exchangelib_status = "pass"
+        exchangelib_fix = None
+    except ImportError:
+        exchangelib_status = "fail"
+        exchangelib_fix = "install package dependencies with pip install -r requirements.txt"
+    checks.append(
+        {
+            "check": "dependency_exchangelib",
+            "status": exchangelib_status,
+            "fix": exchangelib_fix,
+        }
+    )
+    output.print_json({"checks": checks})
+
+
+_register_commands()
 
 
 if __name__ == "__main__":
