@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-06-07
+
+### Added
+
+- **Agent-safe CLI contract**: JSON is now the default machine output with a stable `ok` / `schema_version` / `data` / `meta` envelope and matching error envelope.
+- **Global output controls**: added `--format json|text|raw`, `--fields`, `--compact`, and `--confirm`; `--json` remains as a compatibility alias.
+- **Dry-run/confirm flow**: mutating operations now require `--dry-run` followed by `--confirm <token>`, with operation-bound confirm tokens.
+- **Self-description commands**: added top-level `reference`, `context`, and `doctor` commands for Agent discovery and environment checks.
+- **Self-update command**: added `update --check`, `update --dry-run`, and `update --confirm <token>` with npm/pip/manual update manager support.
+
+### Changed
+
+- **Exit code contract**: error exits now follow the Agent CLI semantic table, including confirmation-required and conflict codes.
+- **Setup flow**: `setup login` is non-interactive in machine mode and participates in the dry-run/confirm flow.
+- **Legacy safety flags**: pre-1.1 `--preview` / `--send` command flags are compatibility-only and hidden from help/reference output.
+- **Documentation**: README and README_zh now document the self-update workflow.
+
 ## [1.0.3] - 2026-05-06
 
 ### Fixed
@@ -106,7 +123,8 @@ Initial release of outlook-cli for Microsoft Exchange.
 - SKILL.md with complete command reference and usage patterns.
 - SECURITY.md with vulnerability reporting and credential handling design.
 
-[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.3...HEAD
+[Unreleased]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.3...v1.1.0
 [1.0.3]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.2...v1.0.3
 [1.0.2]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/fatecannotbealtered/outlook-cli/compare/v1.0.0...v1.0.1

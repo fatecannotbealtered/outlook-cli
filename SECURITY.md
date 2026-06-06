@@ -2,7 +2,7 @@
 
 ## Supported Versions
 
-Security fixes are applied to the latest minor release on the default branch (`main`). Release binaries are published via GitHub Releases and the npm package `outlook-cli`.
+Security fixes are applied to the latest minor release on the default branch (`main`). Release binaries are published via GitHub Releases and the npm package `@fatecannotbealtered-/outlook-cli`.
 
 ## Security Design
 
@@ -28,9 +28,11 @@ Three permission levels prevent unauthorized operations:
 
 The permission level is stored in the config file. **The CLI provides no command to change permissions** — this must be done by manually editing the config file.
 
-### Send Safety
+### Write Safety
 
-Commands that send email (`send`, `reply`, `reply-all`, `forward`, `draft-send`) require an explicit `--preview` or `--send` flag. Without these flags, the command is rejected. This prevents accidental email sending.
+Mutating commands require `--dry-run` followed by `--confirm <token>`. This covers mailbox writes, send/reply/forward, setup writes, local export/download writes, and self-update. Confirm tokens are bound to the previewed operation and expire.
+
+Legacy pre-1.1 command flags such as `--preview` and `--send` are compatibility-only and hidden from help/reference output.
 
 ### Soft Delete
 
@@ -64,7 +66,7 @@ You should receive an acknowledgment as capacity allows. Thank you for helping k
 - Password is encrypted at rest with AES-256-GCM using a machine-bound key derived via PBKDF2 (100k iterations, SHA-256).
 - Machine fingerprint combines hostname, CPU info, and platform-specific identifiers (Windows MachineGuid, Linux machine-id, macOS IOPlatformUUID).
 - Encrypted passwords are prefixed with `enc:v1:` for detection; legacy plaintext configs work transparently.
-- Password input is hidden with hidden input in interactive terminals.
+- `setup login` is non-interactive for Agent use; avoid shell history when passing `--password`, or prefer environment variables for CI/Agent workflows.
 - Sensitive flags (`--password`, `--token`) are stripped from audit logs.
 - Environment variables `OUTLOOK_EMAIL` and `OUTLOOK_PASSWORD` take precedence over config file; prefer them in CI/Agent workflows to avoid persisting credentials on disk.
 

@@ -1,6 +1,6 @@
 {
   "name": "@fatecannotbealtered-/outlook-cli",
-  "version": "1.0.3",
+  "version": "1.1.0",
   "description": "Outlook Exchange CLI for humans and AI Agents — manage email, calendar, folders, rules, and contacts from your terminal",
   "keywords": [
     "outlook",

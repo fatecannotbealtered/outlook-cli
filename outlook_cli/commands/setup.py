@@ -15,9 +15,9 @@ def setup_group():
 
 
 @setup_group.command("login")
-@click.option("--email", default=None, help="Exchange email (prompts if not provided)")
+@click.option("--email", default=None, help="Exchange email (required)")
 @click.option(
-    "--password", default=None, help="Password (prompts if not provided, hidden input)"
+    "--password", default=None, help="Password (required; avoid shell history)"
 )
 @click.option(
     "--server",

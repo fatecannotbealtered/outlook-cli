@@ -72,6 +72,8 @@ class TestCLIHelp:
         assert "tools" in stdout
         assert "setup" in stdout
         assert "update" in stdout
+        assert "--dry-run" in stdout
+        assert "--confirm" in stdout
 
     def test_version(self):
         code, stdout, _ = run_cli("--version")
@@ -130,8 +132,8 @@ class TestCLIHelp:
         assert code == 0
         assert "--html" in stdout
         assert "--attachments" in stdout
-        assert "--preview" in stdout
-        assert "--send" in stdout
+        assert "--preview" not in stdout
+        assert "--send" not in stdout
 
     def test_mail_reply_help(self):
         code, stdout, _ = run_cli("mail", "reply", "--help")
@@ -242,7 +244,7 @@ class TestPermissionEnforcement:
             "Hi",
             "--body",
             "Hello",
-            "--preview",
+            "--dry-run",
             env_overrides=self._env_with_mode("read-only"),
         )
         assert code == 4
@@ -257,7 +259,7 @@ class TestPermissionEnforcement:
             "fake-id",
             "--body",
             "Hi",
-            "--preview",
+            "--dry-run",
             env_overrides=self._env_with_mode("read-only"),
         )
         assert code == 4
@@ -332,14 +334,14 @@ class TestPermissionEnforcement:
             "Hi",
             "--body",
             "Hello",
-            "--preview",
+            "--dry-run",
             env_overrides=self._env_with_mode("write"),
         )
         assert code == 4
         assert error_code(stderr) == "E_FORBIDDEN"
 
-    def test_full_allows_send_preview(self):
-        """Full permission allows send (will fail on connection, not permission)."""
+    def test_full_allows_send_dry_run(self):
+        """Full permission allows a send dry-run."""
         code, stdout, stderr = run_cli(
             "--json",
             "mail",
@@ -350,7 +352,7 @@ class TestPermissionEnforcement:
             "Hi",
             "--body",
             "Hello",
-            "--preview",
+            "--dry-run",
             env_overrides=self._env_with_mode("full"),
         )
         assert code == 0
@@ -516,7 +518,7 @@ class TestRespondValidation:
     def _env_write(self):
         return {"OUTLOOK_PERMISSIONS": "write"}
 
-    def test_respond_requires_preview_or_send(self):
+    def test_respond_requires_target(self):
         token = confirm_token_for(
             "--json",
             "tools",
@@ -545,7 +547,6 @@ class TestRespondValidation:
             "respond",
             "--action",
             "accept",
-            "--send",
             env_overrides=self._env_write(),
         )
         code, _, stderr = run_cli(
@@ -554,7 +555,6 @@ class TestRespondValidation:
             "respond",
             "--action",
             "accept",
-            "--send",
             "--confirm",
             token,
             env_overrides=self._env_write(),
@@ -593,7 +593,7 @@ class TestMissingArgs:
 
     def test_send_missing_to(self):
         code, _, _ = run_cli(
-            "mail", "send", "--subject", "Hi", "--body", "Hello", "--preview"
+            "mail", "send", "--subject", "Hi", "--body", "Hello", "--dry-run"
         )
         assert code != 0
 

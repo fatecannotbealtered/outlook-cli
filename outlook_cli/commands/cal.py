@@ -179,12 +179,12 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
 @click.option(
     "--recurrence-count", default=None, type=int, help="Number of occurrences"
 )
-@click.option("--preview", is_flag=True, help="Preview without creating")
+@click.option("--preview", is_flag=True, hidden=True)
 @click.option(
     "--send",
     "do_send",
     is_flag=True,
-    help="Confirm creation (required when attendees are present)",
+    hidden=True,
 )
 @click.pass_context
 def cal_create(
@@ -202,7 +202,7 @@ def cal_create(
     preview,
     do_send,
 ):
-    """Create a calendar event. Requires --preview or --send when attendees are present."""
+    """Create a calendar event. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("cal create")
@@ -231,13 +231,11 @@ def cal_create(
             if e.strip()
         ]
 
-    # Require --preview or --send when attendees are present (irreversible: sends invitations)
+    # Attendee changes send invitations; the global confirm guard must pass first.
     if attendee_list and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Creating events with attendees requires --preview or --send "
-            "(invitations will be sent to all attendees)",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Creating events with attendees requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     recurrence_obj = None
@@ -330,12 +328,12 @@ def cal_create(
 )
 @click.option("--location", default=None)
 @click.option("--body", default=None)
-@click.option("--preview", is_flag=True, help="Preview without updating")
+@click.option("--preview", is_flag=True, hidden=True)
 @click.option(
     "--send",
     "do_send",
     is_flag=True,
-    help="Confirm update (required when attendees present)",
+    hidden=True,
 )
 @click.pass_context
 def cal_update(
@@ -351,7 +349,7 @@ def cal_update(
     preview,
     do_send,
 ):
-    """Update an existing calendar event. Requires --preview/--send when attendees present."""
+    """Update an existing calendar event. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("cal update")
@@ -397,13 +395,11 @@ def cal_update(
 
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
-    # Require --preview/--send when attendees are present (sends update notifications)
+    # Attendee changes send notifications; the global confirm guard must pass first.
     if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Updating events with attendees requires --preview or --send "
-            "(update notifications will be sent)",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Updating events with attendees requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     if preview or ctx.obj.get("dry_run"):
@@ -445,9 +441,9 @@ def cal_update(
 @click.option("--id", "event_id", required=True, help="Event ID")
 @click.option("--changekey", default="", help="Changekey (improves lookup)")
 @click.option("--force", is_flag=True, help="Skip confirmation")
-@click.option("--preview", is_flag=True, help="Preview without deleting")
+@click.option("--preview", is_flag=True, hidden=True)
 @click.option(
-    "--send", "do_send", is_flag=True, help="Confirm deletion (sends cancellation)"
+    "--send", "do_send", is_flag=True, hidden=True
 )
 @click.pass_context
 def cal_delete(ctx, event_id, changekey, force, preview, do_send):
@@ -463,13 +459,11 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
 
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
-    # Require --preview/--send when attendees present (sends cancellation)
+    # Attendee deletions send cancellations; the global confirm guard must pass first.
     if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
-            "Deleting events with attendees requires --preview or --send "
-            "(cancellation notices will be sent)",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "Deleting events with attendees requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
         )
 
     if not force and not output.is_json() and not preview and not ctx.obj.get("confirm"):

@@ -1,7 +1,7 @@
 ---
 name: outlook-cli
-version: "1.0.3"
-description: "Outlook Exchange CLI for email, calendar, folders, rules, and contacts. Atomic commands for AI Agents."
+version: "1.1.0"
+description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, and self-update. Agent-safe JSON commands."
 license: MIT
 user-invocable: true
 metadata: {"openclaw": {"emoji": "📧", "author": "Sean Guo", "requires": {"bins": ["outlook-cli"]}}}
@@ -9,10 +9,10 @@ metadata: {"openclaw": {"emoji": "📧", "author": "Sean Guo", "requires": {"bin
 
 # outlook-cli
 
-Outlook Exchange CLI for humans and AI Agents. Provides atomic commands for mail, calendar, folders, rules, and contacts via EWS (Exchange Web Services).
+Outlook Exchange CLI for humans and AI Agents. Provides atomic commands for mail, calendar, folders, rules, contacts, diagnostics, and self-update via EWS (Exchange Web Services).
 
 ```bash
-# Please install outlook-cli and use it for all Outlook/Exchange operations going forward (always pass --json).
+# Please install outlook-cli and use it for all Outlook/Exchange operations going forward.
 # Install CLI
 npm install -g @fatecannotbealtered-/outlook-cli
 
@@ -20,8 +20,9 @@ npm install -g @fatecannotbealtered-/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 # Configure and verify
-outlook-cli setup login
-outlook-cli setup doctor --json
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --dry-run
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --confirm ct_...
+outlook-cli setup doctor
 ```
 
 ## Activation
@@ -39,46 +40,53 @@ Activate this skill when the user's request involves:
 Agent gets credentials from user conversation, then configures once:
 
 ```bash
-# Step 1: Configure (password encrypted on save)
-outlook-cli setup login --email user@co.com --password P@ss --skip-test
+# Step 1: Preview config write (password encrypted on save)
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --dry-run
 
-# Step 2: Test connection
+# Step 2: Execute with the returned confirm_token
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --confirm ct_...
+
+# Step 3: Test connection
 outlook-cli setup doctor
 
-# Step 3: Use (all subsequent commands read encrypted config)
-outlook-cli mail list --json
-outlook-cli mail search --sender "boss@company.com" --json
-outlook-cli mail read --id "<message-id>" --json
+# Step 4: Use (all subsequent commands read encrypted config)
+outlook-cli mail list
+outlook-cli mail search --sender "boss@company.com"
+outlook-cli mail read --id "<message-id>"
 ```
 
 If credentials are not yet configured, ask the user for their email and password.
 
 ## Permission System
 
-Three permission levels (default: `read-only`):
+Three permission modes are accepted in config (default: `read-only`):
 
 | Level | Commands |
 |-------|----------|
-| `read-only` | list, search, read, stats, thread, attachment-summary, export, drafts, draft-read, contacts, free-busy, rooms, oof get |
+| `read-only` | list, search, read, stats, thread, attachment-summary, drafts, draft-read, contacts, free-busy, rooms, oof get, reference, context, doctor, update --check |
 | `write` | + move, mark, flag, categorize, restore, batch, delete, cal create/update/delete, folders CRUD, rules CRUD, oof set/disable, respond |
 | `full` | + send, reply, reply-all, forward, draft-send |
 
 Permission is stored in `~/.outlook-cli/config.json`. The CLI does not provide a command to change it — humans edit the file manually. AI Agents cannot escalate privileges.
 
-## Send Safety
+`reference` may label `setup login`, `mail export`, `mail download-attachment`, and `update` as `local-write`. That is a command type, not a permission mode: these commands can write local config/files or run a local updater while `permissions.mode` remains `read-only`, but they still require `--dry-run` followed by `--confirm <token>`.
 
-Send commands (send, reply, reply-all, forward, draft-send) require a safety flag:
+All mutating commands require `--dry-run` followed by `--confirm <token>`.
+
+## Write Safety
+
+Mutating commands require a dry-run/confirm flow. This includes mailbox writes, send/reply/forward, setup writes, local export/download writes, and self-update.
 
 ```bash
-# Without flag: REJECTED
+# Without confirm: REJECTED
 outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello"
-# Error: send commands require --preview or --send
+# Error: command requires --dry-run followed by --confirm <token>
 
-# Preview mode: shows what would be sent
-outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --preview
+# Preview mode: no write, returns confirm_token
+outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --dry-run
 
-# Confirm mode: actually sends
-outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --send
+# Confirm mode: executes same operation
+outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" --confirm ct_...
 ```
 
 ## Delete Safety
@@ -90,9 +98,21 @@ All delete operations are **soft delete** — items go to trash, never permanent
 ### setup
 
 ```bash
-outlook-cli setup login --email user@co.com --password P@ss --skip-test
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --dry-run
+outlook-cli setup login --email user@co.com --password P@ss --skip-test --confirm ct_...
 outlook-cli setup status             # Check configuration
 outlook-cli setup doctor             # Test Exchange connection
+```
+
+### top-level utilities
+
+```bash
+outlook-cli reference                 # Command/parameter/schema reference
+outlook-cli context                   # Runtime/config/credential status
+outlook-cli doctor                    # Non-invasive environment checks
+outlook-cli update --check            # Check latest available version
+outlook-cli update --dry-run          # Preview package-manager update command
+outlook-cli update --confirm ct_...   # Execute confirmed update
 ```
 
 ### mail (24 commands)
@@ -117,17 +137,17 @@ outlook-cli mail restore --id ID [--folder PATH]
 outlook-cli mail batch --ids "id1,id2" --action delete|mark-read|mark-unread|move [--folder PATH] [--force]
 outlook-cli mail delete --id ID [--force]
 
-# Send (full permission, requires --preview or --send)
-outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" [--cc "x@y.com"] [--html] [--attachments file.pdf] [--preview|--send]
-outlook-cli mail reply --id ID --body "Reply" [--html] [--attachments file.pdf] [--preview|--send]
-outlook-cli mail reply-all --id ID --body "Reply" [--html] [--attachments file.pdf] [--preview|--send]
-outlook-cli mail forward --id ID --to "a@b.com" [--body "Note"] [--html] [--attachments file.pdf] [--preview|--send]
+# Send (full permission; use --dry-run then --confirm)
+outlook-cli mail send --to "a@b.com" --subject "Hi" --body "Hello" [--cc "x@y.com"] [--html] [--attachments file.pdf]
+outlook-cli mail reply --id ID --body "Reply" [--html] [--attachments file.pdf]
+outlook-cli mail reply-all --id ID --body "Reply" [--html] [--attachments file.pdf]
+outlook-cli mail forward --id ID --to "a@b.com" [--body "Note"] [--html] [--attachments file.pdf]
 
 # Drafts — list/read are read-only; edit/delete are write; send is full
 outlook-cli mail drafts [--limit N] [--offset N]
 outlook-cli mail draft-read --id ID
 outlook-cli mail draft-edit --id ID [--subject S] [--body S] [--to S] [--cc S]
-outlook-cli mail draft-send --id ID [--preview|--send]
+outlook-cli mail draft-send --id ID
 outlook-cli mail draft-delete --id ID [--force]
 ```
 
@@ -180,9 +200,13 @@ outlook-cli tools respond --mail-id MAIL_ID --action accept|decline|tentative [-
 
 | Flag | Description |
 |------|-------------|
-| `--json` | JSON output (machine-readable) |
-| `--quiet` | Suppress non-error output |
-| `--dry-run` | Preview write operations without executing |
+| `--format json|text|raw` | Output format; default is `json` |
+| `--json` | Compatibility alias for `--format json` |
+| `--fields a,b,c` | Return selected fields for query output |
+| `--compact` | Compact JSON output |
+| `--dry-run` | Preview write operations and return a confirm token |
+| `--confirm TOKEN` | Execute the previously previewed operation |
+| `--quiet` | Suppress stderr progress/prompts |
 | `--account EMAIL` | Shared mailbox email (delegate access) |
 | `--version` | Show version |
 
@@ -190,17 +214,43 @@ outlook-cli tools respond --mail-id MAIL_ID --action accept|decline|tentative [-
 
 | Code | Exit | Meaning |
 |------|------|---------|
-| `CONFIG_ERROR` | 3 | Not configured — run `setup login` |
-| `AUTH_REQUIRED` | 3 | Bad credentials |
-| `FORBIDDEN` | 5 | Insufficient permission level |
-| `NOT_FOUND` | 4 | Resource not found |
-| `VALIDATION_ERROR` | 2 | Invalid arguments |
-| `SERVER_ERROR` | 7 | Exchange server error |
-| `NETWORK_ERROR` | 7 | Connection failed |
+| `E_USAGE` / `E_VALIDATION` | 2 | Invalid arguments or usage |
+| `E_NOT_FOUND` | 3 | Resource not found |
+| `E_AUTH` / `E_FORBIDDEN` / `E_CONFIG` | 4 | Auth, permission, or configuration failure |
+| `E_CONFIRMATION_REQUIRED` | 5 | Mutating command missing confirm token |
+| `E_CONFLICT` | 6 | Confirm token expired or does not match operation |
+| `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` | 7 | Retryable transient error |
+| `E_TIMEOUT` | 8 | Timeout |
 
 ## JSON Output Schema
 
-All commands return flat JSON with `--json`. Key schemas:
+All commands default to JSON. Every success response is wrapped in:
+
+```json
+{
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {},
+  "meta": { "duration_ms": 0 }
+}
+```
+
+Every error response is wrapped in:
+
+```json
+{
+  "ok": false,
+  "schema_version": "1.0",
+  "error": {
+    "code": "E_NOT_FOUND",
+    "message": "Mail not found: abc123",
+    "details": {},
+    "retryable": false
+  }
+}
+```
+
+The schemas below show the command-specific `data` payload.
 
 ### mail list / search
 
@@ -295,9 +345,14 @@ All commands return flat JSON with `--json`. Key schemas:
 
 ```json
 {
-  "error": "Human-readable error message",
-  "errorCode": "NOT_FOUND",
-  "hint": "Suggested fix"
+  "ok": false,
+  "schema_version": "1.0",
+  "error": {
+    "code": "E_NOT_FOUND",
+    "message": "Human-readable error message",
+    "details": {},
+    "retryable": false
+  }
 }
 ```
 
@@ -315,9 +370,9 @@ outlook-cli mail search --sender "boss@company.com" --days 7 --json
 
 ### Read and respond
 ```bash
-outlook-cli mail read --id "<id>" --json
-outlook-cli mail reply --id "<id>" --body "Got it, thanks!" --preview
-outlook-cli mail reply --id "<id>" --body "Got it, thanks!" --send
+outlook-cli mail read --id "<id>"
+outlook-cli mail reply --id "<id>" --body "Got it, thanks!" --dry-run
+outlook-cli mail reply --id "<id>" --body "Got it, thanks!" --confirm ct_...
 ```
 
 ### Calendar management
@@ -338,7 +393,7 @@ outlook-cli tools rooms-free-busy --start "2026-05-05 14:00" --end "2026-05-05 1
 
 ## Notes
 
-- All IDs come from `list`/`search` commands — use `--json` to get machine-readable IDs
+- All IDs come from `list`/`search` commands. JSON is the default output format.
 - Folder paths use `/` separator: `Projects/Alpha`
 - Folder aliases: `inbox`, `sent`, `drafts`, `trash`, `junk` (and Chinese: 收件箱, 已发送, 草稿箱, 垃圾箱, 垃圾邮件)
 - Timezone defaults to `Asia/Shanghai` (configurable via `setup login --timezone`)

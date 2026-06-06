@@ -896,18 +896,17 @@ def mail_delete(ctx, mail_id, force):
         output.success(data["message"])
 
 
-# --- Send commands (full permission, requires --preview or --send) ---
+# --- Send commands (full permission, guarded by dry-run/confirm) ---
 
 
 def _require_send_flag(preview, do_send):
-    """Enforce --preview or --send for send-like commands."""
+    """Retain legacy send flags while enforcing dry-run/confirm."""
     ctx = click.get_current_context(silent=True)
     confirmed = bool(ctx and ctx.obj and ctx.obj.get("confirm"))
     if not preview and not do_send and not confirmed:
         output.handle_error(
             "Send commands require --dry-run followed by --confirm <token>",
-            "VALIDATION_ERROR",
-            exit_code=2,
+            "E_CONFIRMATION_REQUIRED",
         )
 
 
@@ -919,13 +918,13 @@ def _require_send_flag(preview, do_send):
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
 @click.option("--save-draft", is_flag=True, help="Save as draft instead of sending")
-@click.option("--preview", is_flag=True, help="Preview without sending")
-@click.option("--send", "do_send", is_flag=True, help="Confirm and send")
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def mail_send(
     ctx, to_addr, cc, subject, body, html, attachments, save_draft, preview, do_send
 ):
-    """Send an email. Requires --preview or --send (unless --save-draft)."""
+    """Send an email. Requires dry-run/confirm unless saving a draft."""
     from ..config import check_permission
 
     check_permission("mail send")
@@ -1004,11 +1003,11 @@ def mail_send(
 @click.option("--body", required=True)
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
-@click.option("--preview", is_flag=True)
-@click.option("--send", "do_send", is_flag=True)
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def mail_reply(ctx, mail_id, body, html, attachments, preview, do_send):
-    """Reply to sender. Requires --preview or --send."""
+    """Reply to sender. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail reply")
@@ -1082,11 +1081,11 @@ def mail_reply(ctx, mail_id, body, html, attachments, preview, do_send):
 @click.option("--body", required=True)
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
-@click.option("--preview", is_flag=True)
-@click.option("--send", "do_send", is_flag=True)
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def mail_reply_all(ctx, mail_id, body, html, attachments, preview, do_send):
-    """Reply to all recipients. Requires --preview or --send."""
+    """Reply to all recipients. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail reply-all")
@@ -1171,11 +1170,11 @@ def mail_reply_all(ctx, mail_id, body, html, attachments, preview, do_send):
 @click.option("--body", default="")
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="Additional file paths to attach")
-@click.option("--preview", is_flag=True)
-@click.option("--send", "do_send", is_flag=True)
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def mail_forward(ctx, mail_id, to_addr, body, html, attachments, preview, do_send):
-    """Forward email. Requires --preview or --send."""
+    """Forward email. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail forward")
@@ -1386,11 +1385,11 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
 
 @mail_group.command("draft-send")
 @click.option("--id", "mail_id", required=True)
-@click.option("--preview", is_flag=True)
-@click.option("--send", "do_send", is_flag=True)
+@click.option("--preview", is_flag=True, hidden=True)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def mail_draft_send(ctx, mail_id, preview, do_send):
-    """Send a draft. Requires --preview or --send."""
+    """Send a draft. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail draft-send")

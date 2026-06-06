@@ -249,7 +249,11 @@ def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[
                 "path": path_str,
                 "type": _command_type(path_str),
                 "help": command.get_short_help_str(limit=120),
-                "params": [_param_to_dict(p) for p in command.params],
+                "params": [
+                    _param_to_dict(p)
+                    for p in command.params
+                    if not getattr(p, "hidden", False)
+                ],
                 "children": _collect_commands(command, path)
                 if isinstance(command, click.Group)
                 else [],
