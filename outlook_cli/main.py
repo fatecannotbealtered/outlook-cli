@@ -153,6 +153,7 @@ def _register_commands():
     cli.add_command(reference_cmd, "reference")
     cli.add_command(context_cmd, "context")
     cli.add_command(doctor_cmd, "doctor")
+    cli.add_command(update_cmd, "update")
 
 
 # --- Helper decorators ---
@@ -380,6 +381,98 @@ def doctor_cmd():
         }
     )
     output.print_json({"checks": checks})
+
+
+@click.command("update")
+@click.option("--check", "check_only", is_flag=True, help="Only check for an update")
+@click.option(
+    "--manager",
+    type=click.Choice(["auto", "npm", "pip", "manual"]),
+    default="auto",
+    show_default=True,
+    help="Update manager",
+)
+@click.option(
+    "--target-version",
+    default="latest",
+    show_default=True,
+    help="Version to install",
+)
+@click.pass_context
+def update_cmd(ctx, check_only, manager, target_version):
+    """Check for or install a newer outlook-cli release."""
+    from .confirmation import issue_token, validate_token
+    from .updater import (
+        UpdateFailed,
+        UpdateUnsupported,
+        check_update,
+        detect_install_method,
+        execute_update,
+        plan_update,
+    )
+
+    resolved_manager = detect_install_method(manager)
+
+    if check_only:
+        data = check_update(resolved_manager)
+        output.print_json(data)
+        return
+
+    if ctx.obj.get("dry_run"):
+        plan = plan_update(resolved_manager, target_version)
+        token, expires_at = issue_token()
+        output.print_json(
+            {
+                "preview": {"changes": plan["changes"]},
+                "confirm_token": token,
+                "expires_at": expires_at,
+                "current_version": plan["current_version"],
+                "target_version": plan["target_version"],
+                "install_method": plan["install_method"],
+                "supported": plan["supported"],
+                "command": plan["command"],
+                "manual_url": plan["manual_url"],
+            }
+        )
+        return
+
+    confirm = ctx.obj.get("confirm")
+    if not confirm:
+        output.handle_error(
+            "Command 'update' requires --dry-run followed by --confirm <token>",
+            "E_CONFIRMATION_REQUIRED",
+            details={"command": "update"},
+        )
+
+    valid, reason = validate_token(confirm)
+    if not valid:
+        output.handle_error(
+            "Confirm token is invalid for this operation",
+            "E_CONFLICT",
+            details={"command": "update", "reason": reason},
+        )
+
+    try:
+        data = execute_update(
+            resolved_manager,
+            target_version,
+            quiet=ctx.obj.get("quiet", False),
+        )
+    except UpdateUnsupported as exc:
+        output.handle_error(
+            str(exc),
+            "E_VALIDATION",
+            details={"install_method": resolved_manager},
+        )
+    except UpdateFailed as exc:
+        output.handle_error(
+            str(exc),
+            "E_NETWORK",
+            details=exc.details,
+            retryable=True,
+        )
+
+    output.print_json(data)
 
 
 _register_commands()
