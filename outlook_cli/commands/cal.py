@@ -232,7 +232,7 @@ def cal_create(
         ]
 
     # Require --preview or --send when attendees are present (irreversible: sends invitations)
-    if attendee_list and not preview and not do_send:
+    if attendee_list and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Creating events with attendees requires --preview or --send "
             "(invitations will be sent to all attendees)",
@@ -398,7 +398,7 @@ def cal_update(
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
     # Require --preview/--send when attendees are present (sends update notifications)
-    if has_attendees and not preview and not do_send:
+    if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Updating events with attendees requires --preview or --send "
             "(update notifications will be sent)",
@@ -464,7 +464,7 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
     # Require --preview/--send when attendees present (sends cancellation)
-    if has_attendees and not preview and not do_send:
+    if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
         output.handle_error(
             "Deleting events with attendees requires --preview or --send "
             "(cancellation notices will be sent)",
@@ -472,7 +472,7 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
             exit_code=2,
         )
 
-    if not force and not output.is_json() and not preview:
+    if not force and not output.is_json() and not preview and not ctx.obj.get("confirm"):
         click.confirm(f"Delete event '{item.subject}'?", abort=True)
 
     if preview or ctx.obj.get("dry_run"):

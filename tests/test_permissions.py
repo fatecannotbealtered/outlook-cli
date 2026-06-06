@@ -37,7 +37,7 @@ def test_read_only_blocks_write_commands():
     with mock.patch.object(config, "get_permission_mode", return_value="read-only"):
         with pytest.raises(SystemExit) as exc_info:
             config.check_permission("mail move")
-        assert exc_info.value.code == 5
+        assert exc_info.value.code == 4
 
 
 def test_read_only_blocks_full_commands():
@@ -45,17 +45,35 @@ def test_read_only_blocks_full_commands():
     with mock.patch.object(config, "get_permission_mode", return_value="read-only"):
         with pytest.raises(SystemExit) as exc_info:
             config.check_permission("mail send")
-        assert exc_info.value.code == 5
+        assert exc_info.value.code == 4
 
 
 def test_write_allows_read_and_write():
-    """write mode allows read and write commands."""
-    with mock.patch.object(config, "get_permission_mode", return_value="write"):
+    """write mode allows write commands after confirmation guard passes."""
+    with mock.patch.object(config, "get_permission_mode", return_value="write"), mock.patch.object(
+        config, "_require_confirm", return_value=None
+    ):
         config.check_permission("mail list")  # read
         config.check_permission("mail move")  # write
         config.check_permission("mail delete")  # write
         config.check_permission("cal create")  # write
         config.check_permission("rules create")  # write
+
+
+def test_write_requires_confirmation_when_allowed():
+    """write mode still requires dry-run/confirm for mutating commands."""
+    with mock.patch.object(config, "get_permission_mode", return_value="write"):
+        with pytest.raises(SystemExit) as exc_info:
+            config.check_permission("mail move")
+        assert exc_info.value.code == 5
+
+
+def test_local_write_requires_confirmation_without_mailbox_write_permission():
+    """Local file writes do not require mailbox write permission, but need confirm."""
+    with mock.patch.object(config, "get_permission_mode", return_value="read-only"):
+        with pytest.raises(SystemExit) as exc_info:
+            config.check_permission("mail export")
+        assert exc_info.value.code == 5
 
 
 def test_write_blocks_full_commands():
@@ -70,12 +88,14 @@ def test_write_blocks_full_commands():
         ]:
             with pytest.raises(SystemExit) as exc_info:
                 config.check_permission(cmd)
-            assert exc_info.value.code == 5
+            assert exc_info.value.code == 4
 
 
 def test_full_allows_all():
-    """full mode allows everything."""
-    with mock.patch.object(config, "get_permission_mode", return_value="full"):
+    """full mode allows everything after confirmation guard passes."""
+    with mock.patch.object(config, "get_permission_mode", return_value="full"), mock.patch.object(
+        config, "_require_confirm", return_value=None
+    ):
         config.check_permission("mail list")
         config.check_permission("mail move")
         config.check_permission("mail send")
@@ -145,6 +165,11 @@ def test_write_commands_completeness():
     assert expected == config.WRITE_COMMANDS
 
 
+def test_local_write_commands_completeness():
+    expected = {"mail export", "mail download-attachment", "setup login"}
+    assert expected == config.LOCAL_WRITE_COMMANDS
+
+
 def test_full_and_write_no_overlap():
     overlap = config.FULL_COMMANDS & config.WRITE_COMMANDS
     assert overlap == set(), f"Overlap: {overlap}"
@@ -153,10 +178,10 @@ def test_full_and_write_no_overlap():
 # --- Deny output ---
 
 
-def test_deny_exits_5(capsys):
+def test_deny_exits_4(capsys):
     with pytest.raises(SystemExit) as exc_info:
         config._deny("mail send", "read-only", "full")
-    assert exc_info.value.code == 5
+    assert exc_info.value.code == 4
 
 
 def test_deny_includes_hint(capsys):

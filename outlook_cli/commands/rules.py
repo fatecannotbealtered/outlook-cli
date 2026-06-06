@@ -574,7 +574,7 @@ def rules_delete(ctx, rule_id, force):
     except Exception as e:
         output.handle_error(f"Failed to get rules: {e}", "SERVER_ERROR", exit_code=7)
 
-    if not force and not output.is_json():
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(f"Delete rule '{target.display_name}'?", abort=True)
 
     if ctx.obj.get("dry_run"):

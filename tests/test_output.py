@@ -32,7 +32,10 @@ def test_print_json(capsys):
     output.print_json({"key": "value"})
     captured = capsys.readouterr()
     parsed = json.loads(captured.out)
-    assert parsed["key"] == "value"
+    assert parsed["ok"] is True
+    assert parsed["schema_version"] == "1.0"
+    assert parsed["data"]["key"] == "value"
+    assert "duration_ms" in parsed["meta"]
 
 
 def test_print_json_unicode(capsys):
@@ -40,7 +43,7 @@ def test_print_json_unicode(capsys):
     output.print_json({"msg": "你好"})
     captured = capsys.readouterr()
     parsed = json.loads(captured.out)
-    assert parsed["msg"] == "你好"
+    assert parsed["data"]["msg"] == "你好"
 
 
 def test_print_flat_json(capsys):
@@ -48,7 +51,7 @@ def test_print_flat_json(capsys):
     output.print_flat_json({"count": 5})
     captured = capsys.readouterr()
     parsed = json.loads(captured.out)
-    assert parsed["count"] == 5
+    assert parsed["data"]["count"] == 5
 
 
 def test_error_json(capsys):
@@ -58,9 +61,10 @@ def test_error_json(capsys):
     assert captured.out == ""  # errors go to stderr, but capsys captures both
     # The error should be on stderr
     parsed = json.loads(captured.err)
-    assert parsed["error"] == "not found"
-    assert parsed["errorCode"] == "NOT_FOUND"
-    assert parsed["hint"] == "check ID"
+    assert parsed["ok"] is False
+    assert parsed["error"]["message"] == "not found"
+    assert parsed["error"]["code"] == "E_NOT_FOUND"
+    assert parsed["error"]["details"]["hint"] == "check ID"
 
 
 def test_error_json_default_hint():
@@ -68,7 +72,8 @@ def test_error_json_default_hint():
     with mock.patch("sys.stderr", new_callable=StringIO) as mock_stderr:
         output.error_json("forbidden", code="FORBIDDEN")
         parsed = json.loads(mock_stderr.getvalue())
-        assert "权限" in parsed["hint"] or "config" in parsed["hint"].lower()
+        hint = parsed["error"]["details"]["hint"]
+        assert "permissions" in hint.lower() or "config" in hint.lower()
 
 
 def test_success_suppressed_in_quiet(capsys):
@@ -109,7 +114,7 @@ def test_error_always_shown(capsys):
 def test_handle_error_exits():
     with pytest.raises(SystemExit) as exc_info:
         output.handle_error("fatal", "CONFIG_ERROR", exit_code=3)
-    assert exc_info.value.code == 3
+    assert exc_info.value.code == 4
 
 
 def test_handle_error_json_mode(capsys):
@@ -118,28 +123,28 @@ def test_handle_error_json_mode(capsys):
         output.handle_error("fatal", "CONFIG_ERROR", exit_code=3)
     captured = capsys.readouterr()
     parsed = json.loads(captured.err)
-    assert parsed["errorCode"] == "CONFIG_ERROR"
+    assert parsed["error"]["code"] == "E_CONFIG"
 
 
 def test_handle_api_error_auth(capsys):
     output.init(json_mode=True, quiet=False)
     with pytest.raises(SystemExit) as exc_info:
         output.handle_api_error(Exception("401 Unauthorized"))
-    assert exc_info.value.code == 3
+    assert exc_info.value.code == 4
 
 
 def test_handle_api_error_not_found(capsys):
     output.init(json_mode=True, quiet=False)
     with pytest.raises(SystemExit) as exc_info:
         output.handle_api_error(Exception("Item not found"))
-    assert exc_info.value.code == 4
+    assert exc_info.value.code == 3
 
 
 def test_handle_api_error_timeout(capsys):
     output.init(json_mode=True, quiet=False)
     with pytest.raises(SystemExit) as exc_info:
         output.handle_api_error(Exception("Connection timeout"))
-    assert exc_info.value.code == 7
+    assert exc_info.value.code == 8
 
 
 def test_dry_run_output(capsys):
@@ -166,6 +171,13 @@ def test_error_codes_complete():
         "VALIDATION_ERROR",
         "SERVER_ERROR",
         "NETWORK_ERROR",
+        "E_CONFIG",
+        "E_AUTH",
+        "E_FORBIDDEN",
+        "E_NOT_FOUND",
+        "E_VALIDATION",
+        "E_CONFIRMATION_REQUIRED",
+        "E_CONFLICT",
     ]
     for code in expected_codes:
         assert code in output.ERROR_CODES, f"Missing error code: {code}"

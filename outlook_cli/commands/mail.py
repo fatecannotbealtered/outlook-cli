@@ -815,7 +815,7 @@ def mail_batch(ctx, ids, batch_action, folder, force):
         output.handle_error("No mail IDs provided", "VALIDATION_ERROR", exit_code=2)
 
     if batch_action == "delete" and not force:
-        if not output.is_json():
+        if not output.is_json() and not ctx.obj.get("confirm"):
             click.confirm(f"Delete {len(id_list)} email(s)?", abort=True)
 
     if ctx.obj.get("dry_run"):
@@ -879,7 +879,7 @@ def mail_delete(ctx, mail_id, force):
     if not item:
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
-    if not force and not output.is_json():
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(f"Delete email '{item.subject}'?", abort=True)
 
     if ctx.obj.get("dry_run"):
@@ -901,9 +901,11 @@ def mail_delete(ctx, mail_id, force):
 
 def _require_send_flag(preview, do_send):
     """Enforce --preview or --send for send-like commands."""
-    if not preview and not do_send:
+    ctx = click.get_current_context(silent=True)
+    confirmed = bool(ctx and ctx.obj and ctx.obj.get("confirm"))
+    if not preview and not do_send and not confirmed:
         output.handle_error(
-            "Send commands require --preview (preview) or --send (confirm send)",
+            "Send commands require --dry-run followed by --confirm <token>",
             "VALIDATION_ERROR",
             exit_code=2,
         )
@@ -1439,7 +1441,7 @@ def mail_draft_delete(ctx, mail_id, force):
     if not item:
         output.handle_error(f"Draft not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
-    if not force and not output.is_json():
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(f"Delete draft '{item.subject}'?", abort=True)
 
     if ctx.obj.get("dry_run"):
