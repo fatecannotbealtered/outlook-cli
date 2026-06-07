@@ -442,9 +442,7 @@ def cal_update(
 @click.option("--changekey", default="", help="Changekey (improves lookup)")
 @click.option("--force", is_flag=True, help="Skip confirmation")
 @click.option("--preview", is_flag=True, hidden=True)
-@click.option(
-    "--send", "do_send", is_flag=True, hidden=True
-)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def cal_delete(ctx, event_id, changekey, force, preview, do_send):
     """Delete a calendar event (sends cancellation to attendees)."""
@@ -466,7 +464,12 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
             "E_CONFIRMATION_REQUIRED",
         )
 
-    if not force and not output.is_json() and not preview and not ctx.obj.get("confirm"):
+    if (
+        not force
+        and not output.is_json()
+        and not preview
+        and not ctx.obj.get("confirm")
+    ):
         click.confirm(f"Delete event '{item.subject}'?", abort=True)
 
     if preview or ctx.obj.get("dry_run"):

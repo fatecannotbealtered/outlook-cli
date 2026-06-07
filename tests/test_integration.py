@@ -495,9 +495,7 @@ class TestStep2bSendVariants:
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply to")
-        data = get_json(
-            "mail", "reply", "--id", mid, "--body", "This is a real reply."
-        )
+        data = get_json("mail", "reply", "--id", mid, "--body", "This is a real reply.")
         assert data["sent"] is True
 
     def test_06_verify_reply_in_thread(self):

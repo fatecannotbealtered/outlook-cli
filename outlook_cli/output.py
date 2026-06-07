@@ -246,7 +246,11 @@ def print_json(data: Any, meta: dict[str, Any] | None = None) -> None:
             print(data if isinstance(data, str) else json.dumps(data, default=str))
         return
     if is_text():
-        print(data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, default=str))
+        print(
+            data
+            if isinstance(data, str)
+            else json.dumps(data, ensure_ascii=False, default=str)
+        )
         return
     _dump_json(success_envelope(data, meta=meta))
 

@@ -100,11 +100,15 @@ def _redacted_args(args: list[str]) -> list[str]:
 
 
 def operation_digest(args: list[str] | None = None) -> str:
-    payload = json.dumps(args or operation_args(), ensure_ascii=False, separators=(",", ":"))
+    payload = json.dumps(
+        args or operation_args(), ensure_ascii=False, separators=(",", ":")
+    )
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def issue_token(args: list[str] | None = None, ttl_seconds: int = TOKEN_TTL_SECONDS) -> tuple[str, str]:
+def issue_token(
+    args: list[str] | None = None, ttl_seconds: int = TOKEN_TTL_SECONDS
+) -> tuple[str, str]:
     expires_at = datetime.now(timezone.utc) + timedelta(seconds=ttl_seconds)
     expires_epoch = int(expires_at.timestamp())
     digest = operation_digest(args)
@@ -133,7 +137,9 @@ def validate_token(token: str, args: list[str] | None = None) -> tuple[bool, str
         return False, f"invalid confirm token: {exc}"
 
 
-def preview_payload(action: str, detail: dict[str, Any] | None = None) -> dict[str, Any]:
+def preview_payload(
+    action: str, detail: dict[str, Any] | None = None
+) -> dict[str, Any]:
     token, expires_at = issue_token()
     return {
         "preview": {

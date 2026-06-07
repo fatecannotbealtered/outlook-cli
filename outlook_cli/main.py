@@ -79,7 +79,9 @@ class FlexibleGroup(click.Group):
 @click.option("--confirm", default=None, help="Confirm token from --dry-run")
 @click.option("--account", default=None, help="Shared mailbox email (delegate access)")
 @click.pass_context
-def cli(ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, account):
+def cli(
+    ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, account
+):
     """Outlook Exchange CLI for humans and AI Agents.
 
     Manage email, calendar, folders, rules, and contacts from the terminal.
@@ -349,7 +351,9 @@ def doctor_cmd():
         {
             "check": "config_file",
             "status": "pass" if path.exists() else "warn",
-            "fix": None if path.exists() else "run setup login --dry-run, then setup login --confirm <token>",
+            "fix": None
+            if path.exists()
+            else "run setup login --dry-run, then setup login --confirm <token>",
             "details": {"path": str(path)},
         }
     )
@@ -357,7 +361,9 @@ def doctor_cmd():
         {
             "check": "credentials",
             "status": "pass" if cfg.get("email") and cfg.get("password") else "fail",
-            "fix": None if cfg.get("email") and cfg.get("password") else "set OUTLOOK_EMAIL/OUTLOOK_PASSWORD or run setup login",
+            "fix": None
+            if cfg.get("email") and cfg.get("password")
+            else "set OUTLOOK_EMAIL/OUTLOOK_PASSWORD or run setup login",
         }
     )
     mode = get_permission_mode(cfg)
@@ -365,7 +371,9 @@ def doctor_cmd():
         {
             "check": "permissions",
             "status": "pass" if mode in PERMISSION_LEVELS else "fail",
-            "fix": None if mode in PERMISSION_LEVELS else "set permissions.mode to read-only, write, or full",
+            "fix": None
+            if mode in PERMISSION_LEVELS
+            else "set permissions.mode to read-only, write, or full",
             "details": {"mode": mode},
         }
     )
@@ -376,7 +384,9 @@ def doctor_cmd():
         exchangelib_fix = None
     except ImportError:
         exchangelib_status = "fail"
-        exchangelib_fix = "install package dependencies with pip install -r requirements.txt"
+        exchangelib_fix = (
+            "install package dependencies with pip install -r requirements.txt"
+        )
     checks.append(
         {
             "check": "dependency_exchangelib",
