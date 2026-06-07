@@ -582,9 +582,7 @@ def tools_oof_disable(ctx, preview, do_send):
 )
 @click.option("--message", default=None, help="Optional message")
 @click.option("--preview", is_flag=True, hidden=True)
-@click.option(
-    "--send", "do_send", is_flag=True, hidden=True
-)
+@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
 def tools_respond(
     ctx, event_id, changekey, mail_id, response_action, message, preview, do_send

@@ -50,8 +50,9 @@ def test_read_only_blocks_full_commands():
 
 def test_write_allows_read_and_write():
     """write mode allows write commands after confirmation guard passes."""
-    with mock.patch.object(config, "get_permission_mode", return_value="write"), mock.patch.object(
-        config, "_require_confirm", return_value=None
+    with (
+        mock.patch.object(config, "get_permission_mode", return_value="write"),
+        mock.patch.object(config, "_require_confirm", return_value=None),
     ):
         config.check_permission("mail list")  # read
         config.check_permission("mail move")  # write
@@ -93,8 +94,9 @@ def test_write_blocks_full_commands():
 
 def test_full_allows_all():
     """full mode allows everything after confirmation guard passes."""
-    with mock.patch.object(config, "get_permission_mode", return_value="full"), mock.patch.object(
-        config, "_require_confirm", return_value=None
+    with (
+        mock.patch.object(config, "get_permission_mode", return_value="full"),
+        mock.patch.object(config, "_require_confirm", return_value=None),
     ):
         config.check_permission("mail list")
         config.check_permission("mail move")

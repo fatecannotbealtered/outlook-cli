@@ -65,7 +65,9 @@ def update_command(manager: str, target_version: str = "latest") -> list[str]:
 
 
 def _read_json_url(url: str, timeout: float = 5.0) -> dict[str, Any]:
-    req = urllib.request.Request(url, headers={"User-Agent": f"outlook-cli/{__version__}"})
+    req = urllib.request.Request(
+        url, headers={"User-Agent": f"outlook-cli/{__version__}"}
+    )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8"))
 
@@ -125,7 +127,9 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     }
 
 
-def execute_update(manager: str, target_version: str, quiet: bool = False) -> dict[str, Any]:
+def execute_update(
+    manager: str, target_version: str, quiet: bool = False
+) -> dict[str, Any]:
     """Execute the package-manager update command."""
     command = update_command(manager, target_version)
     if not command:
@@ -139,9 +143,17 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
     result = subprocess.run(command, capture_output=True, text=True, timeout=300)
     if not quiet:
         if result.stdout:
-            print(result.stdout, file=sys.stderr, end="" if result.stdout.endswith("\n") else "\n")
+            print(
+                result.stdout,
+                file=sys.stderr,
+                end="" if result.stdout.endswith("\n") else "\n",
+            )
         if result.stderr:
-            print(result.stderr, file=sys.stderr, end="" if result.stderr.endswith("\n") else "\n")
+            print(
+                result.stderr,
+                file=sys.stderr,
+                end="" if result.stderr.endswith("\n") else "\n",
+            )
 
     if result.returncode != 0:
         raise UpdateFailed(

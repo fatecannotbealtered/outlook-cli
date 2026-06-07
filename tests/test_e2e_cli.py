@@ -364,14 +364,18 @@ class TestUpdateCommand:
     """Test self-update command contract without executing package managers."""
 
     def test_update_check_manual(self):
-        code, stdout, _ = run_cli("update", "--check", "--manager", "manual", "--compact")
+        code, stdout, _ = run_cli(
+            "update", "--check", "--manager", "manual", "--compact"
+        )
         assert code == 0
         data = data_doc(stdout)
         assert data["install_method"] == "manual"
         assert data["supported"] is False
 
     def test_update_requires_confirm(self):
-        code, _, stderr = run_cli("update", "--manager", "npm", "--target-version", "latest")
+        code, _, stderr = run_cli(
+            "update", "--manager", "npm", "--target-version", "latest"
+        )
         assert code == 5
         assert error_code(stderr) == "E_CONFIRMATION_REQUIRED"
 
@@ -396,7 +400,9 @@ class TestUpdateCommand:
         ]
 
     def test_update_invalid_token_is_conflict(self):
-        code, _, stderr = run_cli("update", "--manager", "manual", "--confirm", "ct_bad")
+        code, _, stderr = run_cli(
+            "update", "--manager", "manual", "--confirm", "ct_bad"
+        )
         assert code == 6
         assert error_code(stderr) == "E_CONFLICT"
 
