@@ -168,7 +168,7 @@ def test_write_commands_completeness():
 
 
 def test_local_write_commands_completeness():
-    expected = {"mail export", "mail download-attachment", "setup login"}
+    expected = {"mail export", "mail download-attachment", "setup login", "update"}
     assert expected == config.LOCAL_WRITE_COMMANDS
 
 

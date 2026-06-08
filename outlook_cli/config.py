@@ -65,6 +65,7 @@ LOCAL_WRITE_COMMANDS = frozenset(
         "mail export",
         "mail download-attachment",
         "setup login",
+        "update",
     }
 )
 
@@ -275,15 +276,15 @@ def _require_confirm(cmd_path: str) -> None:
     import click
 
     from . import output
-    from .confirmation import command_preview_payload, validate_token
+    from .confirmation import validate_token
 
     ctx = click.get_current_context(silent=True)
     obj = ctx.obj if ctx and ctx.obj else {}
 
-    # --preview is retained as a hidden compatibility alias for pre-1.1 callers.
-    if obj.get("dry_run") or "--preview" in sys.argv:
-        output.print_json(command_preview_payload(cmd_path))
-        sys.exit(0)
+    # Dry-run is allowed to enter the command body so it can build a
+    # resource-specific preview and bind resource state into the token.
+    if obj.get("dry_run"):
+        return
 
     token = obj.get("confirm")
     if not token:

@@ -41,3 +41,17 @@ def test_plan_update_manual_is_unsupported():
 def test_execute_update_manual_raises():
     with pytest.raises(updater.UpdateUnsupported):
         updater.execute_update("manual", "latest", quiet=True)
+
+
+def test_execute_update_latest_reports_resolved_version():
+    completed = mock.Mock(returncode=0, stdout="", stderr="")
+    with (
+        mock.patch.object(updater.shutil, "which", return_value="npm"),
+        mock.patch.object(updater, "latest_version", return_value=("2.0.1", None)),
+        mock.patch.object(updater.subprocess, "run", return_value=completed),
+    ):
+        result = updater.execute_update("npm", "latest", quiet=True)
+
+    assert result["previous_version"] == updater.__version__
+    assert result["current_version"] == "2.0.1"
+    assert result["target_version"] == "latest"

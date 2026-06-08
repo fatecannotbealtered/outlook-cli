@@ -6,6 +6,7 @@ import click
 
 from .. import output
 from ..exchange import get_account, get_tz, localize_dt
+from ..timeutil import iso_utc, item_version, parse_datetime
 
 
 @click.group()
@@ -16,14 +17,7 @@ def cal_group():
 
 def _parse_dt(s, field_name="time"):
     """Parse datetime string in YYYY-MM-DD HH:MM format."""
-    try:
-        return datetime.strptime(s, "%Y-%m-%d %H:%M")
-    except ValueError:
-        output.handle_error(
-            f"{field_name} format error, use YYYY-MM-DD HH:MM, got: {s}",
-            "VALIDATION_ERROR",
-            exit_code=2,
-        )
+    return parse_datetime(s, field_name)
 
 
 def _event_to_dict(item):
@@ -52,13 +46,20 @@ def _event_to_dict(item):
         "id": item_id,
         "changekey": changekey,
         "subject": item.subject or "(no subject)",
-        "start": item.start.strftime("%Y-%m-%d %H:%M") if item.start else "",
-        "end": item.end.strftime("%Y-%m-%d %H:%M") if item.end else "",
+        "start": iso_utc(item.start),
+        "end": iso_utc(item.end),
         "location": item.location or "",
         "organizer": item.organizer.email_address if item.organizer else "",
         "attendees": attendees,
         "body": (item.text_body or "")[:500],
         "is_all_day": item.is_all_day or False,
+        "_untrusted": [
+            "subject",
+            "location",
+            "organizer",
+            "attendees.email",
+            "body",
+        ],
     }
 
 
@@ -179,13 +180,6 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
 @click.option(
     "--recurrence-count", default=None, type=int, help="Number of occurrences"
 )
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option(
-    "--send",
-    "do_send",
-    is_flag=True,
-    hidden=True,
-)
 @click.pass_context
 def cal_create(
     ctx,
@@ -199,8 +193,6 @@ def cal_create(
     recurrence_interval,
     recurrence_end,
     recurrence_count,
-    preview,
-    do_send,
 ):
     """Create a calendar event. Requires dry-run/confirm."""
     from ..config import check_permission
@@ -231,13 +223,6 @@ def cal_create(
             if e.strip()
         ]
 
-    # Attendee changes send invitations; the global confirm guard must pass first.
-    if attendee_list and not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Creating events with attendees requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
-
     recurrence_obj = None
     if recurrence:
         from exchangelib.recurrence import (
@@ -267,22 +252,25 @@ def cal_create(
 
         recurrence_obj = Recurrence(pattern=pattern, range=range_)
 
-    if preview or ctx.obj.get("dry_run"):
+    if ctx.obj.get("dry_run"):
         preview_data = {
             "subject": subject,
-            "start": start,
-            "end": end,
+            "start": iso_utc(start_local),
+            "end": iso_utc(end_local),
             "location": location or "",
             "recurrence": recurrence,
             "attendees": [a.mailbox.email_address for a in (attendee_list or [])],
         }
-        if output.is_json():
-            output.print_json({"dry_run": True, "preview": preview_data})
-        else:
-            output.info("[DRY RUN] Would create event:")
-            for k, v in preview_data.items():
-                output.info(f"  {k}: {v}")
+        output.dry_run_output(
+            "Create event",
+            preview_data,
+            resource_id="new-event",
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("cal create", resource_id="new-event")
 
     event = CalendarItem(
         account=account,
@@ -304,8 +292,8 @@ def cal_create(
     data = {
         "message": "Event created",
         "subject": subject,
-        "start": start,
-        "end": end,
+        "start": iso_utc(start_local),
+        "end": iso_utc(end_local),
         "recurrence": recurrence,
     }
 
@@ -328,13 +316,6 @@ def cal_create(
 )
 @click.option("--location", default=None)
 @click.option("--body", default=None)
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option(
-    "--send",
-    "do_send",
-    is_flag=True,
-    hidden=True,
-)
 @click.pass_context
 def cal_update(
     ctx,
@@ -346,8 +327,6 @@ def cal_update(
     attendees,
     location,
     body,
-    preview,
-    do_send,
 ):
     """Update an existing calendar event. Requires dry-run/confirm."""
     from ..config import check_permission
@@ -395,14 +374,7 @@ def cal_update(
 
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
-    # Attendee changes send notifications; the global confirm guard must pass first.
-    if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Updating events with attendees requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
-
-    if preview or ctx.obj.get("dry_run"):
+    if ctx.obj.get("dry_run"):
         output.dry_run_output(
             "Update event",
             {
@@ -410,8 +382,18 @@ def cal_update(
                 "updated_fields": update_fields,
                 "has_attendees": has_attendees,
             },
+            resource_id=event_id,
+            resource_version=item_version(item),
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed(
+        "cal update",
+        resource_id=event_id,
+        resource_version=item_version(item),
+    )
 
     try:
         item.save(
@@ -441,10 +423,8 @@ def cal_update(
 @click.option("--id", "event_id", required=True, help="Event ID")
 @click.option("--changekey", default="", help="Changekey (improves lookup)")
 @click.option("--force", is_flag=True, help="Skip confirmation")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def cal_delete(ctx, event_id, changekey, force, preview, do_send):
+def cal_delete(ctx, event_id, changekey, force):
     """Delete a calendar event (sends cancellation to attendees)."""
     from ..config import check_permission
 
@@ -457,22 +437,10 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
 
     has_attendees = bool(item.required_attendees or item.optional_attendees)
 
-    # Attendee deletions send cancellations; the global confirm guard must pass first.
-    if has_attendees and not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Deleting events with attendees requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
-
-    if (
-        not force
-        and not output.is_json()
-        and not preview
-        and not ctx.obj.get("confirm")
-    ):
+    if not force and not output.is_json() and not ctx.obj.get("confirm"):
         click.confirm(f"Delete event '{item.subject}'?", abort=True)
 
-    if preview or ctx.obj.get("dry_run"):
+    if ctx.obj.get("dry_run"):
         output.dry_run_output(
             "Delete event",
             {
@@ -480,8 +448,18 @@ def cal_delete(ctx, event_id, changekey, force, preview, do_send):
                 "subject": item.subject,
                 "has_attendees": has_attendees,
             },
+            resource_id=event_id,
+            resource_version=item_version(item),
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed(
+        "cal delete",
+        resource_id=event_id,
+        resource_version=item_version(item),
+    )
 
     subject = item.subject
     item.delete(

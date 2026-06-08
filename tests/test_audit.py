@@ -24,20 +24,22 @@ def test_audit_dir(isolate_audit):
 
 
 def test_log_creates_file(isolate_audit):
-    audit.log("mail send", ["--to", "a@b.com", "--send"], 0, 1500)
+    audit.log("mail send", ["--to", "a@b.com", "--dry-run"], 0, 1500)
     files = audit.files()
     assert len(files) == 1
     assert files[0].endswith(".jsonl")
 
 
 def test_log_entry_format(isolate_audit):
-    audit.log("mail list", ["--limit", "10"], 0, 500)
+    audit.log("mail list", ["--limit", "10"], 0, 500, account="a@example.com")
     files = audit.files()
     with open(files[0], "r", encoding="utf-8") as f:
         entry = json.loads(f.readline())
     assert "ts" in entry
+    assert entry["ts"].endswith("Z")
     assert entry["cmd"] == "mail list"
     assert entry["args"] == ["--limit", "10"]
+    assert entry["account"] == "a@example.com"
     assert entry["exit"] == 0
     assert entry["ms"] == 500
 
@@ -75,6 +77,15 @@ def test_log_strips_token(isolate_audit):
     assert "--token" in entry["args"]  # flag kept, value stripped
     assert "--other" in entry["args"]
     assert "val" in entry["args"]
+
+
+def test_log_strips_confirm_token(isolate_audit):
+    audit.log("mail send", ["--confirm", "ct_secret", "--subject", "hi"], 0, 100)
+    files = audit.files()
+    with open(files[0], "r", encoding="utf-8") as f:
+        entry = json.loads(f.readline())
+    assert "ct_secret" not in entry["args"]
+    assert "--confirm" in entry["args"]
 
 
 def test_no_audit_env(tmp_path):

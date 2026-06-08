@@ -71,6 +71,7 @@ class TestCLIHelp:
         assert "rules" in stdout
         assert "tools" in stdout
         assert "setup" in stdout
+        assert "changelog" in stdout
         assert "update" in stdout
         assert "--dry-run" in stdout
         assert "--confirm" in stdout
@@ -211,20 +212,39 @@ class TestSelfDescription:
         assert code == 0
         data = data_doc(stdout)
         assert data["tool"] == "outlook-cli"
+        assert data["schema_version"] == "2.0"
+        assert data["risk_tier"] == "T1"
+        assert data["security"]["untrusted_marker"] == "_untrusted"
         assert "commands" in data
         assert any(cmd["path"] == "update" for cmd in data["commands"])
+        assert any(cmd["path"] == "changelog" for cmd in data["commands"])
+        mail_group = next(cmd for cmd in data["commands"] if cmd["path"] == "mail")
+        mail_list = next(
+            cmd for cmd in mail_group["children"] if cmd["path"] == "mail list"
+        )
+        assert mail_list["pagination"]["supported"] is True
 
     def test_context(self):
         code, stdout, _ = run_cli("context", "--compact")
         assert code == 0
         data = data_doc(stdout)
+        assert data["version"]
         assert "configured" in data
         assert "credentials" in data
+        assert "skill" in data
 
     def test_doctor(self):
         code, stdout, _ = run_cli("doctor", "--compact")
         assert code == 0
-        assert "checks" in data_doc(stdout)
+        checks = data_doc(stdout)["checks"]
+        assert any(c["check"] == "version" for c in checks)
+
+    def test_changelog(self):
+        code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["current_version"] == "1.1.0"
+        assert data["entries"][0]["version"] == "Unreleased"
 
 
 class TestPermissionEnforcement:
@@ -308,7 +328,7 @@ class TestPermissionEnforcement:
         assert code == 5
         assert error_code(stderr) == "E_CONFIRMATION_REQUIRED"
 
-    def test_write_move_dry_run_returns_token(self):
+    def test_resource_write_dry_run_requires_credentials(self):
         code, stdout, _ = run_cli(
             "--json",
             "mail",
@@ -320,8 +340,8 @@ class TestPermissionEnforcement:
             "--dry-run",
             env_overrides=self._env_with_mode("write"),
         )
-        assert code == 0
-        assert data_doc(stdout)["confirm_token"].startswith("ct_")
+        assert code == 4
+        assert stdout == ""
 
     def test_write_blocks_send(self):
         code, _, stderr = run_cli(
@@ -406,6 +426,26 @@ class TestUpdateCommand:
         assert code == 6
         assert error_code(stderr) == "E_CONFLICT"
 
+    def test_setup_login_token_does_not_expose_password(self):
+        code, stdout, _ = run_cli(
+            "setup",
+            "login",
+            "--email",
+            "a@example.com",
+            "--password",
+            "super-secret",
+            "--skip-test",
+            "--dry-run",
+            "--compact",
+        )
+        assert code == 0
+        assert "super-secret" not in stdout
+
+    def test_rules_no_permanent_delete_option(self):
+        code, stdout, _ = run_cli("rules", "create", "--help")
+        assert code == 0
+        assert "--permanent-delete" not in stdout
+
 
 class TestSendSafety:
     """Test that send commands require dry-run/confirm."""
@@ -444,16 +484,6 @@ class TestSendSafety:
         assert error_code(stderr) == "E_CONFIG"
 
     def test_reply_without_flag_rejected(self):
-        token = confirm_token_for(
-            "--json",
-            "mail",
-            "reply",
-            "--id",
-            "fake-id",
-            "--body",
-            "Hi",
-            env_overrides=self._env_full(),
-        )
         code, _, stderr = run_cli(
             "--json",
             "mail",
@@ -462,24 +492,43 @@ class TestSendSafety:
             "fake-id",
             "--body",
             "Hi",
-            "--confirm",
-            token,
+            "--dry-run",
             env_overrides=self._env_full(),
         )
         assert code == 4
         assert error_code(stderr) == "E_CONFIG"
 
-    def test_forward_without_flag_rejected(self):
+    def test_confirm_token_binds_args(self):
         token = confirm_token_for(
             "--json",
             "mail",
-            "forward",
-            "--id",
-            "fake-id",
+            "send",
             "--to",
             "test@test.com",
+            "--subject",
+            "Hi",
+            "--body",
+            "Hello",
             env_overrides=self._env_full(),
         )
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "send",
+            "--to",
+            "test@test.com",
+            "--subject",
+            "Changed",
+            "--body",
+            "Hello",
+            "--confirm",
+            token,
+            env_overrides=self._env_full(),
+        )
+        assert code == 6
+        assert error_code(stderr) == "E_CONFLICT"
+
+    def test_forward_without_flag_rejected(self):
         code, _, stderr = run_cli(
             "--json",
             "mail",
@@ -488,30 +537,20 @@ class TestSendSafety:
             "fake-id",
             "--to",
             "test@test.com",
-            "--confirm",
-            token,
+            "--dry-run",
             env_overrides=self._env_full(),
         )
         assert code == 4
         assert error_code(stderr) == "E_CONFIG"
 
     def test_draft_send_without_flag_rejected(self):
-        token = confirm_token_for(
-            "--json",
-            "mail",
-            "draft-send",
-            "--id",
-            "fake-id",
-            env_overrides=self._env_full(),
-        )
         code, _, stderr = run_cli(
             "--json",
             "mail",
             "draft-send",
             "--id",
             "fake-id",
-            "--confirm",
-            token,
+            "--dry-run",
             env_overrides=self._env_full(),
         )
         assert code == 4
@@ -525,44 +564,26 @@ class TestRespondValidation:
         return {"OUTLOOK_PERMISSIONS": "write"}
 
     def test_respond_requires_target(self):
-        token = confirm_token_for(
-            "--json",
-            "tools",
-            "respond",
-            "--action",
-            "accept",
-            env_overrides=self._env_write(),
-        )
         code, _, stderr = run_cli(
             "--json",
             "tools",
             "respond",
             "--action",
             "accept",
-            "--confirm",
-            token,
+            "--dry-run",
             env_overrides=self._env_write(),
         )
         assert code == 2
         assert error_code(stderr) == "E_VALIDATION"
 
     def test_respond_requires_id_or_mail_id(self):
-        token = confirm_token_for(
-            "--json",
-            "tools",
-            "respond",
-            "--action",
-            "accept",
-            env_overrides=self._env_write(),
-        )
         code, _, stderr = run_cli(
             "--json",
             "tools",
             "respond",
             "--action",
             "accept",
-            "--confirm",
-            token,
+            "--dry-run",
             env_overrides=self._env_write(),
         )
         assert code == 2
@@ -617,3 +638,18 @@ class TestMissingArgs:
             "2026-05-01 11:00",
         )
         assert code != 0
+
+    def test_batch_move_requires_folder(self):
+        code, _, stderr = run_cli(
+            "--json",
+            "mail",
+            "batch",
+            "--ids",
+            "fake-id",
+            "--action",
+            "move",
+            "--dry-run",
+            env_overrides={"OUTLOOK_PERMISSIONS": "write"},
+        )
+        assert code == 2
+        assert error_code(stderr) == "E_VALIDATION"

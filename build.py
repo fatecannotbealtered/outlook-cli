@@ -45,6 +45,7 @@ def main():
         "--hidden-import", "outlook_cli.commands.setup",
         # exchangelib and its dynamic submodules
         "--collect-all", "exchangelib",
+        "--add-data", f"CHANGELOG.md{os.pathsep}.",
         str(entry),
     ]
 

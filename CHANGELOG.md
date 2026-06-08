@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Added runtime `changelog [--since]` derived from `CHANGELOG.md`.
+- Added version, schema, Skill compatibility, risk tier, permission, and security metadata to self-description output.
+- Added `_untrusted` markers to externally sourced Outlook fields returned to agents.
+- Added resource-aware confirm-token payloads that bind operation args, account, permission mode, and resource identity/version when available.
+
+### Changed
+
+- Bumped the CLI output schema to `2.0` and normalized command output timestamps to ISO 8601 UTC.
+- Changed write dry-runs to enter command-specific preview paths instead of returning only a generic command preview.
+- Changed `mail batch` to return per-item results and bind batch confirm tokens to the observed item versions.
+- Expanded audit records with UTC timestamps, account context, local-write command coverage, and confirm-token redaction.
+- Removed the rules `--permanent-delete` authoring option so CLI-created rules honor the soft-delete-only policy.
+- Removed pre-1.1 `--preview` / `--send` compatibility flags; write commands now use only `--dry-run -> --confirm`.
+- Made `mail read` non-mutating; use `mail mark --status read` for read-state changes.
+
+### Security
+
+- Documented the tool as a T1 AI-native CLI and aligned mailbox content handling with the untrusted-content convention.
+- Made npm postinstall checksum verification hard-fail when checksums are missing or invalid.
+
 ## [1.1.0] - 2026-06-07
 
 ### Added

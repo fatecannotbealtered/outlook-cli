@@ -73,7 +73,7 @@ def _command_path(args):
 
 
 def _needs_confirm(args):
-    if any(arg in args for arg in ("--dry-run", "--confirm", "--preview")):
+    if any(arg in args for arg in ("--dry-run", "--confirm")):
         return False
     return _command_path(args) in MUTATING_COMMANDS
 
@@ -389,7 +389,7 @@ class TestStep2MailRoundTrip:
 
 # ──────────────────────────────────────────────
 # Step 2b: Send variants (HTML, attachments, reply, forward)
-# Covers all send/reply/forward code paths with --send
+# Covers all send/reply/forward code paths through dry-run/confirm
 # ──────────────────────────────────────────────
 
 

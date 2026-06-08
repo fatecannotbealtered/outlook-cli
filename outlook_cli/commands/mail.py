@@ -16,6 +16,7 @@ from ..exchange import (
     resolve_folder,
     safe_filename,
 )
+from ..timeutil import iso_utc, item_version
 
 
 @click.group()
@@ -45,6 +46,16 @@ def _item_id(item):
             return item.id.id
         return str(item.id)
     return ""
+
+
+def _confirm_item(command: str, item) -> None:
+    from ..confirmation import require_confirmed
+
+    require_confirmed(
+        command,
+        resource_id=_item_id(item),
+        resource_version=item_version(item),
+    )
 
 
 # --- Read commands (read-only permission) ---
@@ -262,15 +273,16 @@ def mail_read(ctx, mail_id, mark_read):
     from ..config import check_permission
 
     check_permission("mail read")
+    if mark_read:
+        output.handle_error(
+            "mail read is non-mutating; use 'mail mark --status read' with dry-run/confirm",
+            "E_VALIDATION",
+        )
 
     account = get_account()
     item = find_mail_by_id(account, mail_id)
     if not item:
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
-
-    if mark_read and not item.is_read:
-        item.is_read = True
-        item.save(update_fields=["is_read"])
 
     attachments = []
     for att in item.attachments or []:
@@ -288,13 +300,19 @@ def mail_read(ctx, mail_id, mark_read):
         "sender": item.sender.email_address if item.sender else "",
         "to": [m.email_address for m in (item.to_recipients or [])],
         "cc": [m.email_address for m in (item.cc_recipients or [])],
-        "date": item.datetime_received.strftime("%Y-%m-%d %H:%M:%S")
-        if item.datetime_received
-        else "",
+        "date": iso_utc(item.datetime_received),
         "is_read": bool(item.is_read),
         "has_attachments": bool(item.has_attachments),
         "body": item.text_body or "",
         "attachments": attachments,
+        "_untrusted": [
+            "subject",
+            "sender",
+            "to",
+            "cc",
+            "body",
+            "attachments.name",
+        ],
     }
 
     if output.is_json():
@@ -363,8 +381,8 @@ def mail_stats(ctx, folder, days, start, end, top):
 
     data = {
         "period": {
-            "start": start_dt.strftime("%Y-%m-%d"),
-            "end": end_dt.strftime("%Y-%m-%d"),
+            "start": iso_utc(start_dt),
+            "end": iso_utc(end_dt),
         },
         "folder": str(folder) if folder else "inbox",
         "total": total,
@@ -373,6 +391,7 @@ def mail_stats(ctx, folder, days, start, end, top):
         "with_attachments": with_att,
         "top_senders": [{"sender": s, "count": c} for s, c in top_senders],
         "by_day": [{"date": d, "count": c} for d, c in by_day],
+        "_untrusted": ["top_senders.sender"],
     }
 
     if output.is_json():
@@ -474,10 +493,13 @@ def mail_attachment_summary(ctx, folder, days, ext, limit, offset):
                     "id": _item_id(item),
                     "subject": item.subject or "",
                     "sender": item.sender.email_address if item.sender else "",
-                    "date": item.datetime_received.strftime("%Y-%m-%d %H:%M:%S")
-                    if item.datetime_received
-                    else "",
+                    "date": iso_utc(item.datetime_received),
                     "attachments": atts,
+                    "_untrusted": [
+                        "subject",
+                        "sender",
+                        "attachments.name",
+                    ],
                 }
             )
 
@@ -529,6 +551,17 @@ def mail_export(ctx, mail_id, output_path):
     fname = f"{subject}.eml"
     fpath = os.path.join(output_path, fname)
 
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Export email",
+            {"id": mail_id, "subject": item.subject, "path": os.path.abspath(fpath)},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
+        return
+
+    _confirm_item("mail export", item)
+
     with open(fpath, "wb") as f:
         f.write(item.mime_content)
 
@@ -560,7 +593,11 @@ def mail_download_attachment(ctx, mail_id, name, output_path):
     if not item:
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
+    if not ctx.obj.get("dry_run"):
+        _confirm_item("mail download-attachment", item)
+
     files = []
+    planned = []
     for att in item.attachments or []:
         if name and att.name != name:
             continue
@@ -570,6 +607,9 @@ def mail_download_attachment(ctx, mail_id, name, output_path):
         if os.path.exists(fpath):
             base, ext = os.path.splitext(fname)
             fpath = os.path.join(output_path, f"{base}_{len(files)}{ext}")
+        if ctx.obj.get("dry_run"):
+            planned.append({"name": att.name, "path": os.path.abspath(fpath)})
+            continue
         with open(fpath, "wb") as f:
             f.write(att.content)
         files.append(
@@ -580,6 +620,15 @@ def mail_download_attachment(ctx, mail_id, name, output_path):
                 "size": att.size or 0,
             }
         )
+
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Download attachments",
+            {"id": mail_id, "files": planned},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
+        return
 
     data = {"message": f"Downloaded {len(files)} attachment(s)", "files": files}
 
@@ -610,10 +659,14 @@ def mail_move(ctx, mail_id, folder):
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
-            "Move email", {"id": mail_id, "subject": item.subject, "target": folder}
+            "Move email",
+            {"id": mail_id, "subject": item.subject, "target": folder},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
         )
         return
 
+    _confirm_item("mail move", item)
     target = resolve_folder(account, folder)
     subject = item.subject
     item.move(target)
@@ -643,9 +696,15 @@ def mail_mark(ctx, mail_id, mark_status):
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Mark email", {"id": mail_id, "status": mark_status})
+        output.dry_run_output(
+            "Mark email",
+            {"id": mail_id, "status": mark_status},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
 
+    _confirm_item("mail mark", item)
     item.is_read = mark_status == "read"
     item.save(update_fields=["is_read"])
 
@@ -687,9 +746,15 @@ def mail_flag(ctx, mail_id, flag_action):
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Flag email", {"id": mail_id, "action": flag_action})
+        output.dry_run_output(
+            "Flag email",
+            {"id": mail_id, "action": flag_action},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
 
+    _confirm_item("mail flag", item)
     flag_map = {"flag": 2, "complete": 1, "unflag": None}
     item.flag = flag_map.get(flag_action)
     item.save(update_fields=["flag"])
@@ -727,9 +792,12 @@ def mail_categorize(ctx, mail_id, cat_action, categories):
         output.dry_run_output(
             "Categorize email",
             {"id": mail_id, "action": cat_action, "categories": categories},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
         )
         return
 
+    _confirm_item("mail categorize", item)
     current = list(item.categories or [])
 
     if cat_action == "add" and categories:
@@ -774,10 +842,14 @@ def mail_restore(ctx, mail_id, folder):
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
-            "Restore email", {"id": mail_id, "target": folder or "inbox"}
+            "Restore email",
+            {"id": mail_id, "target": folder or "inbox"},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
         )
         return
 
+    _confirm_item("mail restore", item)
     if folder:
         target = resolve_folder(account, folder)
     else:
@@ -813,25 +885,68 @@ def mail_batch(ctx, ids, batch_action, folder, force):
     id_list = [i.strip() for i in ids.split(",") if i.strip()]
     if not id_list:
         output.handle_error("No mail IDs provided", "VALIDATION_ERROR", exit_code=2)
+    if batch_action == "move" and not folder:
+        output.handle_error(
+            "--folder is required when --action move",
+            "VALIDATION_ERROR",
+            exit_code=2,
+        )
 
     if batch_action == "delete" and not force:
         if not output.is_json() and not ctx.obj.get("confirm"):
             click.confirm(f"Delete {len(id_list)} email(s)?", abort=True)
 
     if ctx.obj.get("dry_run"):
+        items = []
+        account = get_account()
+        for mid in id_list:
+            item = find_mail_by_id(account, mid)
+            items.append(
+                {
+                    "id": mid,
+                    "exists": bool(item),
+                    "resource_version": item_version(item) if item else "",
+                }
+            )
         output.dry_run_output(
             "Batch operation",
-            {"action": batch_action, "count": len(id_list), "ids": id_list},
+            {
+                "action": batch_action,
+                "count": len(id_list),
+                "items": items,
+            },
+            resource_id=",".join(id_list),
+            resource_version=";".join(i["resource_version"] for i in items),
         )
         return
 
+    from ..confirmation import require_confirmed
+
     account = get_account()
-    success_count = 0
-    failed_ids = []
+    preflight = []
     for mid in id_list:
         item = find_mail_by_id(account, mid)
+        preflight.append((mid, item, item_version(item) if item else ""))
+
+    require_confirmed(
+        "mail batch",
+        resource_id=",".join(id_list),
+        resource_version=";".join(version for _, _, version in preflight),
+    )
+
+    success_count = 0
+    results = []
+    for mid, item, version in preflight:
         if not item:
-            failed_ids.append(mid)
+            results.append(
+                {
+                    "id": mid,
+                    "ok": False,
+                    "status": "not_found",
+                    "resource_version": version,
+                    "error": "mail not found",
+                }
+            )
             continue
         try:
             if batch_action == "delete":
@@ -846,20 +961,38 @@ def mail_batch(ctx, ids, batch_action, folder, force):
                 target = resolve_folder(account, folder)
                 item.move(target)
             success_count += 1
-        except Exception:
-            failed_ids.append(mid)
+            results.append(
+                {
+                    "id": mid,
+                    "ok": True,
+                    "status": "applied",
+                    "resource_version": version,
+                }
+            )
+        except Exception as exc:
+            results.append(
+                {
+                    "id": mid,
+                    "ok": False,
+                    "status": "failed",
+                    "resource_version": version,
+                    "error": str(exc),
+                }
+            )
 
     data = {
         "message": f"Batch {batch_action}: {success_count}/{len(id_list)} succeeded",
         "success": success_count,
         "total": len(id_list),
-        "failed_ids": failed_ids,
+        "failed_ids": [r["id"] for r in results if not r["ok"]],
+        "results": results,
     }
 
     if output.is_json():
         output.print_json(data)
     else:
         output.success(data["message"])
+        failed_ids = data["failed_ids"]
         if failed_ids:
             output.warn(f"  Failed IDs: {', '.join(failed_ids)}")
 
@@ -883,9 +1016,15 @@ def mail_delete(ctx, mail_id, force):
         click.confirm(f"Delete email '{item.subject}'?", abort=True)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Delete email", {"id": mail_id, "subject": item.subject})
+        output.dry_run_output(
+            "Delete email",
+            {"id": mail_id, "subject": item.subject},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
 
+    _confirm_item("mail delete", item)
     subject = item.subject
     item.move_to_trash()
 
@@ -899,17 +1038,6 @@ def mail_delete(ctx, mail_id, force):
 # --- Send commands (full permission, guarded by dry-run/confirm) ---
 
 
-def _require_send_flag(preview, do_send):
-    """Retain legacy send flags while enforcing dry-run/confirm."""
-    ctx = click.get_current_context(silent=True)
-    confirmed = bool(ctx and ctx.obj and ctx.obj.get("confirm"))
-    if not preview and not do_send and not confirmed:
-        output.handle_error(
-            "Send commands require --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
-
-
 @mail_group.command("send")
 @click.option("--to", "to_addr", required=True, help="Recipient emails (comma-sep)")
 @click.option("--cc", default=None)
@@ -918,18 +1046,12 @@ def _require_send_flag(preview, do_send):
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
 @click.option("--save-draft", is_flag=True, help="Save as draft instead of sending")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def mail_send(
-    ctx, to_addr, cc, subject, body, html, attachments, save_draft, preview, do_send
-):
-    """Send an email. Requires dry-run/confirm unless saving a draft."""
+def mail_send(ctx, to_addr, cc, subject, body, html, attachments, save_draft):
+    """Send an email. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail send")
-    if not save_draft:
-        _require_send_flag(preview, do_send)
 
     to_list = [a.strip() for a in to_addr.split(",")]
     cc_list = [a.strip() for a in cc.split(",")] if cc else []
@@ -943,19 +1065,20 @@ def mail_send(
         "attachments": list(attachments) if attachments else [],
     }
 
-    if preview:
-        if output.is_json():
-            output.print_json({"preview": preview_data, "sent": False})
-        else:
-            output.bold("  Preview:")
-            output.info(f"  To: {', '.join(to_list)}")
-            if cc_list:
-                output.info(f"  CC: {', '.join(cc_list)}")
-            output.info(f"  Subject: {subject}")
-            output.info(f"  Body: {preview_data['body_preview']}")
-            if html:
-                output.gray("  (HTML format)")
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Save draft" if save_draft else "Send email",
+            preview_data,
+            resource_id="new-draft" if save_draft else "new-message",
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed(
+        "mail send",
+        resource_id="new-draft" if save_draft else "new-message",
+    )
 
     from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
 
@@ -1003,40 +1126,35 @@ def mail_send(
 @click.option("--body", required=True)
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def mail_reply(ctx, mail_id, body, html, attachments, preview, do_send):
+def mail_reply(ctx, mail_id, body, html, attachments):
     """Reply to sender. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail reply")
-    _require_send_flag(preview, do_send)
 
     account = get_account()
     item = find_mail_by_id(account, mail_id)
     if not item:
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
-    if preview:
-        data = {
-            "preview": {
-                "action": "reply",
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Reply to email",
+            {
+                "id": mail_id,
                 "to": item.sender.email_address if item.sender else "",
-                "original_subject": item.subject,
+                "subject": item.subject,
                 "body_preview": body[:200],
                 "html": html,
                 "attachments": list(attachments) if attachments else [],
             },
-            "sent": False,
-        }
-        if output.is_json():
-            output.print_json(data)
-        else:
-            output.bold("  Reply preview:")
-            output.info(f"  To: {data['preview']['to']}")
-            output.info(f"  Subject: Re: {item.subject}")
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
+
+    _confirm_item("mail reply", item)
 
     if attachments:
         from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
@@ -1081,43 +1199,38 @@ def mail_reply(ctx, mail_id, body, html, attachments, preview, do_send):
 @click.option("--body", required=True)
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def mail_reply_all(ctx, mail_id, body, html, attachments, preview, do_send):
+def mail_reply_all(ctx, mail_id, body, html, attachments):
     """Reply to all recipients. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail reply-all")
-    _require_send_flag(preview, do_send)
 
     account = get_account()
     item = find_mail_by_id(account, mail_id)
     if not item:
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
-    if preview:
+    if ctx.obj.get("dry_run"):
         all_to = [item.sender.email_address] if item.sender else []
         all_to += [m.email_address for m in (item.to_recipients or [])]
         all_to += [m.email_address for m in (item.cc_recipients or [])]
-        data = {
-            "preview": {
-                "action": "reply-all",
-                "to": list(set(all_to)),
-                "original_subject": item.subject,
+        output.dry_run_output(
+            "Reply all to email",
+            {
+                "id": mail_id,
+                "to": sorted(set(all_to)),
+                "subject": item.subject,
                 "body_preview": body[:200],
                 "html": html,
                 "attachments": list(attachments) if attachments else [],
             },
-            "sent": False,
-        }
-        if output.is_json():
-            output.print_json(data)
-        else:
-            output.bold("  Reply-all preview:")
-            output.info(f"  To: {', '.join(set(all_to))}")
-            output.info(f"  Subject: Re: {item.subject}")
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
+
+    _confirm_item("mail reply-all", item)
 
     if attachments:
         from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
@@ -1170,15 +1283,12 @@ def mail_reply_all(ctx, mail_id, body, html, attachments, preview, do_send):
 @click.option("--body", default="")
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="Additional file paths to attach")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def mail_forward(ctx, mail_id, to_addr, body, html, attachments, preview, do_send):
+def mail_forward(ctx, mail_id, to_addr, body, html, attachments):
     """Forward email. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail forward")
-    _require_send_flag(preview, do_send)
 
     account = get_account()
     item = find_mail_by_id(account, mail_id)
@@ -1187,25 +1297,23 @@ def mail_forward(ctx, mail_id, to_addr, body, html, attachments, preview, do_sen
 
     to_list = [a.strip() for a in to_addr.split(",")]
 
-    if preview:
-        data = {
-            "preview": {
-                "action": "forward",
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Forward email",
+            {
+                "id": mail_id,
                 "to": to_list,
-                "original_subject": item.subject,
+                "subject": item.subject,
                 "body_preview": body[:200] if body else "",
                 "html": html,
                 "attachments": list(attachments) if attachments else [],
             },
-            "sent": False,
-        }
-        if output.is_json():
-            output.print_json(data)
-        else:
-            output.bold("  Forward preview:")
-            output.info(f"  To: {', '.join(to_list)}")
-            output.info(f"  Subject: Fwd: {item.subject}")
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
+
+    _confirm_item("mail forward", item)
 
     from exchangelib import Mailbox, FileAttachment, HTMLBody
 
@@ -1310,6 +1418,7 @@ def mail_draft_read(ctx, mail_id):
         "to": [m.email_address for m in (item.to_recipients or [])],
         "cc": [m.email_address for m in (item.cc_recipients or [])],
         "body": item.text_body or "",
+        "_untrusted": ["subject", "to", "cc", "body"],
     }
 
     if output.is_json():
@@ -1343,9 +1452,12 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
         output.dry_run_output(
             "Edit draft",
             {"id": mail_id, "subject": subject, "body": body[:100] if body else None},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
         )
         return
 
+    _confirm_item("mail draft-edit", item)
     from exchangelib import Mailbox
 
     updated = []
@@ -1385,36 +1497,32 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
 
 @mail_group.command("draft-send")
 @click.option("--id", "mail_id", required=True)
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def mail_draft_send(ctx, mail_id, preview, do_send):
+def mail_draft_send(ctx, mail_id):
     """Send a draft. Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("mail draft-send")
-    _require_send_flag(preview, do_send)
 
     account = get_account()
     item = find_mail_by_id(account, mail_id)
     if not item:
         output.handle_error(f"Draft not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
-    if preview:
-        data = {
-            "preview": {
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Send draft",
+            {
+                "id": mail_id,
                 "subject": item.subject,
                 "to": [m.email_address for m in (item.to_recipients or [])],
             },
-            "sent": False,
-        }
-        if output.is_json():
-            output.print_json(data)
-        else:
-            output.bold("  Draft preview:")
-            output.info(f"  Subject: {item.subject}")
-            output.info(f"  To: {', '.join(data['preview']['to'])}")
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
+
+    _confirm_item("mail draft-send", item)
 
     subject = item.subject
     item.send()
@@ -1444,9 +1552,15 @@ def mail_draft_delete(ctx, mail_id, force):
         click.confirm(f"Delete draft '{item.subject}'?", abort=True)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Delete draft", {"id": mail_id, "subject": item.subject})
+        output.dry_run_output(
+            "Delete draft",
+            {"id": mail_id, "subject": item.subject},
+            resource_id=_item_id(item),
+            resource_version=item_version(item),
+        )
         return
 
+    _confirm_item("mail draft-delete", item)
     subject = item.subject
     item.move_to_trash()
 

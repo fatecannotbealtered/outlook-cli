@@ -6,6 +6,7 @@ import click
 
 from .. import output
 from ..exchange import get_account, get_tz, localize_dt
+from ..timeutil import iso_utc, item_version, parse_datetime
 
 
 @click.group()
@@ -65,6 +66,7 @@ def tools_contacts(ctx, query, email_exact, limit):
             phones = getattr(contact, "phone_numbers", None)
             if phones:
                 entry["phone"] = str(phones[0].phone_number) if phones else ""
+        entry["_untrusted"] = ["name", "email", "department", "title", "phone"]
         contacts.append(entry)
 
     if limit:
@@ -141,12 +143,10 @@ def tools_free_busy(ctx, emails_str, start, end, slot):
         busy_slots = []
         if hasattr(view, "calendar_event_array") and view.calendar_event_array:
             for event in view.calendar_event_array:
-                s = event.start.strftime("%Y-%m-%d %H:%M") if event.start else ""
-                e_ = event.end.strftime("%Y-%m-%d %H:%M") if event.end else ""
                 busy_slots.append(
                     {
-                        "start": s,
-                        "end": e_,
+                        "start": iso_utc(event.start),
+                        "end": iso_utc(event.end),
                         "status": getattr(event, "busy_type", "Busy"),
                     }
                 )
@@ -154,7 +154,7 @@ def tools_free_busy(ctx, emails_str, start, end, slot):
                     all_busy.append((event.start, event.end))
         output_data.append({"email": email, "busy_slots": busy_slots})
 
-    free_slots = _calc_free_slots(start_dt, end_dt, all_busy, slot)
+    free_slots = _calc_free_slots(start_dt, end_dt, all_busy, slot, tz)
 
     data = {"results": output_data, "suggested_free_slots": free_slots}
 
@@ -169,7 +169,7 @@ def tools_free_busy(ctx, emails_str, start, end, slot):
                 output.gray(f"    {s['start']} ~ {s['end']}")
 
 
-def _calc_free_slots(start_dt, end_dt, busy_list, slot_minutes):
+def _calc_free_slots(start_dt, end_dt, busy_list, slot_minutes, tz=None):
     """Calculate free time slots during work hours (08:00-18:00 by default).
 
     Work hours can be configured via OUTLOOK_WORK_START and OUTLOOK_WORK_END env vars.
@@ -197,10 +197,12 @@ def _calc_free_slots(start_dt, end_dt, busy_list, slot_minutes):
         slot_end = current + slot_delta
         overlap = any(s < slot_end and e > current for s, e in busy_naive)
         if not overlap:
+            start_out = localize_dt(current, tz) if tz else current
+            end_out = localize_dt(slot_end, tz) if tz else slot_end
             free.append(
                 {
-                    "start": current.strftime("%Y-%m-%d %H:%M"),
-                    "end": slot_end.strftime("%Y-%m-%d %H:%M"),
+                    "start": iso_utc(start_out),
+                    "end": iso_utc(end_out),
                 }
             )
         current += slot_delta
@@ -251,7 +253,12 @@ def tools_rooms(ctx, keyword, limit):
                     "list_name": "(ungrouped)",
                     "list_email": "",
                     "rooms": [
-                        {"name": r.name, "email": r.email_address} for r in rooms
+                        {
+                            "name": r.name,
+                            "email": r.email_address,
+                            "_untrusted": ["name", "email"],
+                        }
+                        for r in rooms
                     ],
                 }
             ]
@@ -276,7 +283,14 @@ def tools_rooms(ctx, keyword, limit):
             rooms = []
         if limit:
             rooms = rooms[: max(0, limit - total)]
-        room_entries = [{"name": r.name, "email": r.email_address} for r in rooms]
+        room_entries = [
+            {
+                "name": r.name,
+                "email": r.email_address,
+                "_untrusted": ["name", "email"],
+            }
+            for r in rooms
+        ]
         total += len(room_entries)
         result.append(
             {
@@ -315,8 +329,8 @@ def tools_rooms_free_busy(ctx, start, end, list_name, emails, limit):
     account = get_account()
     tz = get_tz()
 
-    start_dt = datetime.strptime(start, "%Y-%m-%d %H:%M")
-    end_dt = datetime.strptime(end, "%Y-%m-%d %H:%M")
+    start_dt = parse_datetime(start, "start time")
+    end_dt = parse_datetime(end, "end time")
     start_local = localize_dt(start_dt, tz)
     end_local = localize_dt(end_dt, tz)
 
@@ -381,14 +395,18 @@ def tools_rooms_free_busy(ctx, start, end, list_name, emails, limit):
                     if event.start < end_local and event.end > start_local:
                         has_conflict = True
                         break
-        entry = {"name": room_names.get(email, email), "email": email}
+        entry = {
+            "name": room_names.get(email, email),
+            "email": email,
+            "_untrusted": ["name", "email"],
+        }
         if has_conflict:
             busy.append(entry)
         else:
             available.append(entry)
 
     data = {
-        "period": {"start": start, "end": end},
+        "period": {"start": iso_utc(start_local), "end": iso_utc(end_local)},
         "queried": len(room_emails),
         "available_count": len(available),
         "busy_count": len(busy),
@@ -445,8 +463,9 @@ def tools_oof_get(ctx):
         "state": str(oof.state),
         "internal_reply": _reply_text(oof.internal_reply),
         "external_reply": _reply_text(oof.external_reply),
-        "start": oof.start.strftime("%Y-%m-%d %H:%M") if oof.start else "",
-        "end": oof.end.strftime("%Y-%m-%d %H:%M") if oof.end else "",
+        "start": iso_utc(oof.start),
+        "end": iso_utc(oof.end),
+        "_untrusted": ["internal_reply", "external_reply"],
     }
 
     if output.is_json():
@@ -470,56 +489,51 @@ def tools_oof_get(ctx):
 )
 @click.option("--start", default=None, help="Start time YYYY-MM-DD HH:MM")
 @click.option("--end", default=None, help="End time YYYY-MM-DD HH:MM")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def tools_oof_set(ctx, message, external_message, start, end, preview, do_send):
+def tools_oof_set(ctx, message, external_message, start, end):
     """Enable auto-reply (Out of Office). Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("tools oof set")
 
-    if not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Enabling auto-reply requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
-
-    from exchangelib import OofSettings, Body
-
-    account = get_account()
     tz = get_tz()
 
+    state = "Scheduled" if (start and end) else "Enabled"
+    start_local = (
+        localize_dt(parse_datetime(start, "start time"), tz) if start else None
+    )
+    end_local = localize_dt(parse_datetime(end, "end time"), tz) if end else None
+
+    if ctx.obj.get("dry_run"):
+        preview_data = {
+            "state": state,
+            "internal_reply": message[:200],
+            "external_reply": (external_message or message)[:200],
+            "start": iso_utc(start_local),
+            "end": iso_utc(end_local),
+        }
+        output.dry_run_output(
+            "Enable auto-reply",
+            preview_data,
+            resource_id="oof-settings",
+        )
+        return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("tools oof set", resource_id="oof-settings")
+
+    from exchangelib import Body, OofSettings
+
+    account = get_account()
     oof_kwargs = {
-        "state": "Scheduled" if (start and end) else "Enabled",
+        "state": state,
         "internal_reply": Body(message),
         "external_reply": Body(external_message or message),
     }
-    if start and end:
-        oof_kwargs["start"] = localize_dt(
-            datetime.strptime(start, "%Y-%m-%d %H:%M"), tz
-        )
-        oof_kwargs["end"] = localize_dt(datetime.strptime(end, "%Y-%m-%d %H:%M"), tz)
-
-    if preview:
-        preview_data = {
-            "state": oof_kwargs["state"],
-            "internal_reply": message[:200],
-            "external_reply": (external_message or message)[:200],
-            "start": start or "",
-            "end": end or "",
-        }
-        if output.is_json():
-            output.print_json({"preview": preview_data, "enabled": False})
-        else:
-            output.bold("  OOF Preview:")
-            output.info(f"  State: {preview_data['state']}")
-            output.info(f"  Internal: {preview_data['internal_reply']}")
-            if external_message:
-                output.info(f"  External: {preview_data['external_reply']}")
-            if start:
-                output.info(f"  Period: {start} ~ {end}")
-        return
+    if start_local and end_local:
+        oof_kwargs["start"] = start_local
+        oof_kwargs["end"] = end_local
 
     account.oof_settings = OofSettings(**oof_kwargs)
 
@@ -531,29 +545,26 @@ def tools_oof_set(ctx, message, external_message, start, end, preview, do_send):
 
 
 @tools_oof.command("disable")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def tools_oof_disable(ctx, preview, do_send):
+def tools_oof_disable(ctx):
     """Disable auto-reply (Out of Office). Requires dry-run/confirm."""
     from ..config import check_permission
 
     check_permission("tools oof disable")
 
-    if not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Disabling auto-reply requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Disable auto-reply",
+            {"action": "disable_oof"},
+            resource_id="oof-settings",
         )
-
-    if preview:
-        if output.is_json():
-            output.print_json({"preview": {"action": "disable_oof"}, "disabled": False})
-        else:
-            output.info("[DRY RUN] Would disable auto-reply")
         return
 
     from exchangelib import OofSettings
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("tools oof disable", resource_id="oof-settings")
 
     account = get_account()
     account.oof_settings = OofSettings(state="Disabled")
@@ -581,12 +592,8 @@ def tools_oof_disable(ctx, preview, do_send):
     required=True,
 )
 @click.option("--message", default=None, help="Optional message")
-@click.option("--preview", is_flag=True, hidden=True)
-@click.option("--send", "do_send", is_flag=True, hidden=True)
 @click.pass_context
-def tools_respond(
-    ctx, event_id, changekey, mail_id, response_action, message, preview, do_send
-):
+def tools_respond(ctx, event_id, changekey, mail_id, response_action, message):
     """Respond to a meeting invitation. Requires dry-run/confirm.
 
     Use --id with a calendar event ID, or --mail-id with a meeting
@@ -595,12 +602,6 @@ def tools_respond(
     from ..config import check_permission
 
     check_permission("tools respond")
-
-    if not preview and not do_send and not ctx.obj.get("confirm"):
-        output.handle_error(
-            "Meeting response requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-        )
 
     if not event_id and not mail_id:
         output.handle_error(
@@ -695,7 +696,7 @@ def tools_respond(
                 f"Event not found: {event_id}", "NOT_FOUND", exit_code=4
             )
 
-    if preview:
+    if ctx.obj.get("dry_run"):
         action_labels = {
             "accept": "Accept",
             "decline": "Decline",
@@ -707,15 +708,21 @@ def tools_respond(
             "message": message or "",
             "source": "mail" if mail_id else "calendar",
         }
-        if output.is_json():
-            output.print_json({"preview": preview_data, "responded": False})
-        else:
-            output.bold("  Response preview:")
-            output.info(f"  Action: {preview_data['action']}")
-            output.info(f"  Meeting: {preview_data['subject']}")
-            if message:
-                output.info(f"  Message: {message}")
+        output.dry_run_output(
+            "Respond to meeting",
+            preview_data,
+            resource_id=event_id or mail_id or "",
+            resource_version=item_version(target),
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed(
+        "tools respond",
+        resource_id=event_id or mail_id or "",
+        resource_version=item_version(target),
+    )
 
     action_map = {
         "accept": target.accept,

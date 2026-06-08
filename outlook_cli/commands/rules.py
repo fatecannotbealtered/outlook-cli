@@ -111,13 +111,14 @@ def _rule_to_dict(rule):
             exceptions["except_body_contains"] = list(e.contains_body_strings)
 
     return {
-        "id": rule.id,
+        "id": str(rule.id or ""),
         "name": rule.display_name or "(unnamed)",
         "priority": rule.priority,
         "is_enabled": rule.is_enabled,
         "conditions": conditions,
         "actions": actions,
         "exceptions": exceptions,
+        "_untrusted": ["name", "conditions", "actions", "exceptions"],
     }
 
 
@@ -266,8 +267,6 @@ def _build_act_kwargs(account, **kwargs):
         ]
     if kwargs.get("delete_msg"):
         result["delete"] = True
-    if kwargs.get("permanent_delete"):
-        result["permanently_delete"] = True
     if kwargs.get("assign_categories"):
         result["assign_categories"] = [
             c.strip() for c in kwargs["assign_categories"].split(",")
@@ -329,7 +328,6 @@ def _add_action_options(f):
         click.option("--forward-as-attachment-to", default=None),
         click.option("--redirect-to", default=None),
         click.option("--delete-msg", is_flag=True, help="Delete (move to trash)"),
-        click.option("--permanent-delete", is_flag=True),
         click.option(
             "--assign-categories", default=None, help="Categories (comma-sep)"
         ),
@@ -438,8 +436,13 @@ def rules_create(ctx, name, priority, **kwargs):
                 "conditions": list(cond_kwargs.keys()),
                 "actions": list(act_kwargs.keys()),
             },
+            resource_id=name,
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("rules create", resource_id=name)
 
     rule = Rule(
         account=account,
@@ -539,8 +542,13 @@ def rules_update(ctx, rule_id, name, priority, **kwargs):
                 "conditions_updated": list(cond_kwargs.keys()),
                 "actions_updated": list(act_kwargs.keys()),
             },
+            resource_id=rule_id,
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("rules update", resource_id=rule_id)
 
     target.save()
 
@@ -579,9 +587,15 @@ def rules_delete(ctx, rule_id, force):
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
-            "Delete rule", {"id": rule_id, "name": target.display_name}
+            "Delete rule",
+            {"id": rule_id, "name": target.display_name},
+            resource_id=rule_id,
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("rules delete", resource_id=rule_id)
 
     name = target.display_name
     target.delete()
@@ -615,8 +629,16 @@ def rules_toggle(ctx, rule_id, toggle_action):
         output.handle_error(f"Failed to get rules: {e}", "SERVER_ERROR", exit_code=7)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Toggle rule", {"id": rule_id, "action": toggle_action})
+        output.dry_run_output(
+            "Toggle rule",
+            {"id": rule_id, "action": toggle_action},
+            resource_id=rule_id,
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("rules toggle", resource_id=rule_id)
 
     target.is_enabled = toggle_action == "enable"
     target.save()

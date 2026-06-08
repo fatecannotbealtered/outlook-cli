@@ -7,14 +7,24 @@ Mirrors jira-cli's internal/audit/audit.go pattern.
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 # Test isolation
 _test_dir: str = ""
 
 # Sensitive flags to strip from logged args
-_SENSITIVE_FLAGS = {"--password", "-p", "--token", "-t"}
+_SENSITIVE_FLAGS = {
+    "--password",
+    "-p",
+    "--token",
+    "-t",
+    "--access-token",
+    "--confirm",
+    "--secret",
+    "--authorization",
+    "--cookie",
+}
 
 
 def audit_dir() -> Path:
@@ -24,7 +34,13 @@ def audit_dir() -> Path:
     return Path.home() / ".outlook-cli" / "audit"
 
 
-def log(cmd_path: str, args: list, exit_code: int, duration_ms: int) -> None:
+def log(
+    cmd_path: str,
+    args: list,
+    exit_code: int,
+    duration_ms: int,
+    account: str = "",
+) -> None:
     """Write one audit entry. No-op if OUTLOOK_NO_AUDIT=1."""
     if os.environ.get("OUTLOOK_NO_AUDIT", "") == "1":
         return
@@ -38,9 +54,13 @@ def log(cmd_path: str, args: list, exit_code: int, duration_ms: int) -> None:
     _maybe_cleanup(d)
 
     entry = {
-        "ts": datetime.now().astimezone().isoformat(),
+        "ts": datetime.now(timezone.utc)
+        .replace(microsecond=0)
+        .isoformat()
+        .replace("+00:00", "Z"),
         "cmd": cmd_path,
         "args": _sanitize_args(args),
+        "account": account,
         "exit": exit_code,
         "ms": duration_ms,
     }
