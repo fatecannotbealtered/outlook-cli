@@ -142,6 +142,11 @@ def get_tz():
 
 def localize_dt(dt, tz):
     """Localize a naive datetime. Compatible with zoneinfo and pytz."""
+    if getattr(dt, "tzinfo", None) is not None:
+        try:
+            return dt.astimezone(tz)
+        except Exception:
+            return dt
     try:
         return dt.replace(tzinfo=tz)
     except Exception:
@@ -265,6 +270,8 @@ def strip_re_fwd(subject: str, prefix: str) -> str:
 
 def email_to_dict(item, preview_len: int = 500) -> dict:
     """Convert an exchangelib Message to a flat dict."""
+    from .timeutil import iso_utc
+
     sender = item.sender.email_address if item.sender else "unknown"
     to_list = [m.email_address for m in (item.to_recipients or [])]
     cc_list = [m.email_address for m in (item.cc_recipients or [])]
@@ -278,13 +285,12 @@ def email_to_dict(item, preview_len: int = 500) -> dict:
         "sender": sender,
         "to": to_list,
         "cc": cc_list,
-        "date": item.datetime_received.strftime("%Y-%m-%d %H:%M:%S")
-        if item.datetime_received
-        else "",
+        "date": iso_utc(item.datetime_received),
         "is_read": item.is_read,
         "has_attachments": bool(item.attachments),
         "preview": body_clean[:preview_len]
         + ("..." if len(body_clean) > preview_len else ""),
+        "_untrusted": ["subject", "sender", "to", "cc", "preview"],
     }
 
 

@@ -1,7 +1,5 @@
 """Setup commands: login, status, doctor."""
 
-import sys
-
 import click
 
 from .. import output
@@ -37,8 +35,6 @@ def setup_login(ctx, email, password, server, timezone, skip_test):
         outlook-cli setup login --email user@co.com --password P@ss --confirm <token>
     """
     import os
-    import sys
-
     from ..confirmation import command_preview_payload, validate_token
 
     if email is None:
@@ -95,11 +91,9 @@ def setup_login(ctx, email, password, server, timezone, skip_test):
                 output.success(f"Connected as {account.primary_smtp_address}")
                 output.info(f"Inbox: {inbox_count} messages")
         except SystemExit:
-            output.error("Connection failed. Check credentials.")
-            sys.exit(4)
+            raise
         except Exception as e:
-            output.error(f"Connection failed: {e}")
-            sys.exit(4)
+            output.handle_api_error(e)
         finally:
             for k in ("OUTLOOK_EMAIL", "OUTLOOK_PASSWORD", "OUTLOOK_SERVER"):
                 os.environ.pop(k, None)
@@ -186,9 +180,4 @@ def setup_doctor():
                 f"Inbox: {data['inbox_total']} total, {data['inbox_unread']} unread"
             )
     except Exception as e:
-        data = {"connection": "failed", "error": str(e)}
-        if output.is_json():
-            output.print_json(data)
-        else:
-            output.error(f"Connection failed: {e}")
-        sys.exit(7)
+        output.handle_api_error(e)

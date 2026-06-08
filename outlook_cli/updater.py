@@ -140,6 +140,12 @@ def execute_update(
     if shutil.which(command[0]) is None and not Path(command[0]).exists():
         raise UpdateUnsupported(f"Update manager not found: {command[0]}")
 
+    resolved_version = target_version
+    if target_version == "latest":
+        latest, _ = latest_version(manager)
+        if latest:
+            resolved_version = latest
+
     result = subprocess.run(command, capture_output=True, text=True, timeout=300)
     if not quiet:
         if result.stdout:
@@ -167,11 +173,13 @@ def execute_update(
         )
 
     return {
-        "current_version": __version__,
+        "previous_version": __version__,
+        "current_version": resolved_version,
         "target_version": target_version,
         "install_method": manager,
         "command": command,
         "updated": True,
+        "next_step": f'run "outlook-cli changelog --since {__version__}" to see what changed',
     }
 
 

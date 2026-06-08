@@ -3,149 +3,71 @@ name: Release
 on:
   push:
     tags:
-      - "v*"
+      - "v*.*.*"
 
 permissions:
   contents: write
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-      - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-      - name: Run tests
-        run: pytest tests/ -v --tb=short
-
   build:
-    needs: test
     strategy:
+      fail-fast: false
       matrix:
-        include:
-          - os: windows-latest
-            platform: windows
-            arch: amd64
-          - os: macos-latest
-            platform: darwin
-            arch: amd64
-          - os: macos-14
-            platform: darwin
-            arch: arm64
-          - os: ubuntu-latest
-            platform: linux
-            arch: amd64
+        os: [ubuntu-24.04, macos-13, windows-2022]
+        python-version: ["3.12"]
     runs-on: ${{ matrix.os }}
 
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
 
-      - name: Get version from tag
-        id: version
-        run: echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-        shell: bash
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
 
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
 
+      - name: Test
+        run: pytest tests/ -q
+
       - name: Build binary
         run: python build.py
 
-      - name: Package binary (Unix)
-        if: runner.os != 'Windows'
-        run: |
-          VERSION=${{ steps.version.outputs.VERSION }}
-          PLATFORM=${{ matrix.platform }}
-          ARCH=${{ matrix.arch }}
-          ARCHIVE="outlook-cli-${VERSION}-${PLATFORM}-${ARCH}.tar.gz"
-          cd dist
-          tar -czf "${ARCHIVE}" outlook-cli
-          shasum -a 256 "${ARCHIVE}" >> ../checksums.txt
-
-      - name: Package binary (Windows)
-        if: runner.os == 'Windows'
+      - name: Package release archive
         shell: pwsh
         run: |
-          $version = "${{ steps.version.outputs.VERSION }}"
-          $platform = "${{ matrix.platform }}"
-          $arch = "${{ matrix.arch }}"
-          $archive = "outlook-cli-${version}-${platform}-${arch}.zip"
-          cd dist
-          Compress-Archive -Path "outlook-cli.exe" -DestinationPath $archive
-          $hash = (Get-FileHash $archive -Algorithm SHA256).Hash
-          "$hash  $archive" | Out-File -Append -FilePath "../checksums.txt" -Encoding utf8
+          $version = node -p "require('./package.json').version"
+          $platformMap = @{
+            "Linux" = "linux"
+            "macOS" = "darwin"
+            "Windows" = "windows"
+          }
+          $platform = $platformMap["${{ runner.os }}"]
+          $arch = "amd64"
+          $base = "outlook-cli-$version-$platform-$arch"
+          New-Item -ItemType Directory -Force -Path release | Out-Null
+          if ("${{ runner.os }}" -eq "Windows") {
+            Copy-Item dist/outlook-cli.exe release/outlook-cli.exe
+            Compress-Archive -Path release/outlook-cli.exe -DestinationPath "release/$base.zip" -Force
+            $hash = (Get-FileHash "release/$base.zip" -Algorithm SHA256).Hash.ToLower()
+            "$hash  $base.zip" | Out-File -Encoding utf8 "release/checksums-$platform-$arch.txt"
+          } else {
+            Copy-Item dist/outlook-cli release/outlook-cli
+            tar -C release -czf "release/$base.tar.gz" outlook-cli
+            $hash = (Get-FileHash "release/$base.tar.gz" -Algorithm SHA256).Hash.ToLower()
+            "$hash  $base.tar.gz" | Out-File -Encoding utf8 "release/checksums-$platform-$arch.txt"
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: outlook-cli-${{ matrix.platform }}-${{ matrix.arch }}
-          path: |
-            dist/outlook-cli-*-${{ matrix.platform }}-${{ matrix.arch }}*
-            checksums.txt
+          name: outlook-cli-${{ runner.os }}
+          path: release/*
 
-  release:
-    needs: build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Download all artifacts
-        uses: actions/download-artifact@v4
-        with:
-          path: artifacts
-
-      - name: Prepare release assets
-        run: |
-          mkdir -p release
-          find artifacts -type f \( -name "*.tar.gz" -o -name "*.zip" -o -name "checksums.txt" \) -exec cp {} release/ \;
-          # Merge all checksum files
-          cat artifacts/*/checksums.txt 2>/dev/null | sort -u > release/checksums.txt || true
-          ls -la release/
-
-      - name: Extract release notes from CHANGELOG
-        run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          # Use awk for reliable section extraction across platforms
-          awk -v ver="$VERSION" '
-            /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1 }
-            found { print }
-          ' CHANGELOG.md > release-notes.md
-          # Fallback: if extraction produced nothing, use a simple note
-          if [ ! -s release-notes.md ]; then
-            echo "## v${VERSION}" > release-notes.md
-            echo "" >> release-notes.md
-            echo "See [CHANGELOG.md](CHANGELOG.md) for details." >> release-notes.md
-          fi
-
-      - name: Create GitHub Release
+      - name: Upload GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
-          body_path: release-notes.md
-          draft: false
-          prerelease: false
-
-  npm-publish:
-    needs: release
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: "20"
-          registry-url: "https://registry.npmjs.org"
-
-      - name: Publish to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

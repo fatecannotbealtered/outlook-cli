@@ -19,17 +19,10 @@ const PLATFORM_MAP = {
 
 const ARCH_MAP = {
   x64: "amd64",
-  arm64: "arm64",
 };
 
 const platform = PLATFORM_MAP[process.platform];
 let arch = ARCH_MAP[process.arch];
-
-// Windows ARM64: fall back to amd64 (runs via emulation)
-if (process.platform === "win32" && process.arch === "arm64") {
-  console.log("Windows ARM64 detected, falling back to x64 binary (runs via emulation)");
-  arch = "amd64";
-}
 
 if (!platform || !arch) {
   console.error(`Unsupported platform: ${process.platform}-${process.arch}`);
@@ -72,7 +65,10 @@ function verifyChecksum(filePath, expectedHash) {
 function install() {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "outlook-cli-"));
   const archivePath = path.join(tmpDir, archiveName);
-  const checksumURL = `https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt`;
+  const checksumURLs = [
+    `https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt`,
+    `https://github.com/${REPO}/releases/download/v${VERSION}/checksums-${platform}-${arch}.txt`,
+  ];
   const checksumPath = path.join(tmpDir, "checksums.txt");
 
   try {
@@ -81,7 +77,19 @@ function install() {
 
     // Verify checksum
     try {
-      download(checksumURL, checksumPath);
+      let checksumErr = null;
+      for (const checksumURL of checksumURLs) {
+        try {
+          download(checksumURL, checksumPath);
+          checksumErr = null;
+          break;
+        } catch (err) {
+          checksumErr = err;
+        }
+      }
+      if (checksumErr) {
+        throw checksumErr;
+      }
       const checksumContent = fs.readFileSync(checksumPath, "utf8");
       const line = checksumContent
         .split("\n")
@@ -97,11 +105,7 @@ function install() {
         );
       }
     } catch (checksumErr) {
-      if (checksumErr.message.includes("Checksum mismatch") ||
-          checksumErr.message.includes("not found in checksums.txt")) {
-        throw checksumErr;
-      }
-      console.warn("Warning: could not verify checksum —", checksumErr.message);
+      throw new Error(`Could not verify checksum: ${checksumErr.message}`);
     }
 
     // Extract binary

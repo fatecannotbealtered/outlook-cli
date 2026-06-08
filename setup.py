@@ -13,6 +13,7 @@ setup(
     url="https://github.com/fatecannotbealtered/outlook-cli",
     license="MIT",
     packages=find_packages(exclude=["tests", "tests.*"]),
+    data_files=[("share/outlook-cli", ["CHANGELOG.md"])],
     python_requires=">=3.10",
     install_requires=[
         "click>=8.0,<9.0",
@@ -25,6 +26,7 @@ setup(
             "pytest-cov>=4.0",
             "ruff>=0.1.0",
             "pyinstaller>=6.0",
+            "pip-audit>=2.7",
         ],
     },
     entry_points={

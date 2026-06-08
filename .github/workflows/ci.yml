@@ -34,6 +34,12 @@ jobs:
       - name: Check formatting with ruff
         run: ruff format --check outlook_cli/ tests/
 
+      - name: Audit Python dependencies
+        run: pip-audit -r requirements.txt
+
+      - name: Audit npm package
+        run: npm audit --omit=dev
+
       - name: Run tests
         run: pytest tests/ -v --tb=short
 

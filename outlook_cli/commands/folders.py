@@ -28,6 +28,7 @@ def _folder_to_dict(folder, depth=0, max_depth=3):
         "name": folder.name,
         "total_count": folder.total_count or 0,
         "unread_count": folder.unread_count or 0,
+        "_untrusted": ["name"],
     }
     if depth < max_depth:
         children = []
@@ -119,6 +120,18 @@ def folders_create(ctx, name):
 
     parent = account.inbox.parent
     created = []
+    if ctx.obj.get("dry_run"):
+        output.dry_run_output(
+            "Create folder",
+            {"name": name},
+            resource_id=name,
+        )
+        return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("folders create", resource_id=name)
+
     for part in parts:
         existing = None
         try:
@@ -132,9 +145,6 @@ def folders_create(ctx, name):
         if existing:
             parent = existing
         else:
-            if ctx.obj.get("dry_run"):
-                output.info(f"[DRY RUN] Would create folder: {part}")
-                continue
             new_folder = Folder(parent=parent, name=part)
             new_folder.save()
             created.append(part)
@@ -142,9 +152,6 @@ def folders_create(ctx, name):
 
     if not created and not ctx.obj.get("dry_run"):
         data = {"message": f"Folder already exists: {name}"}
-    elif ctx.obj.get("dry_run"):
-        output.dry_run_output("Create folder", {"name": name})
-        return
     else:
         data = {"message": f"Folder created: {name}", "created": created}
 
@@ -170,8 +177,16 @@ def folders_rename(ctx, name, new_name):
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Rename folder", {"from": name, "to": new_name})
+        output.dry_run_output(
+            "Rename folder",
+            {"from": name, "to": new_name},
+            resource_id=_folder_id(folder),
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("folders rename", resource_id=_folder_id(folder))
 
     old_name = folder.name
     try:
@@ -213,8 +228,16 @@ def folders_move(ctx, name, target):
         )
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Move folder", {"from": name, "to": target})
+        output.dry_run_output(
+            "Move folder",
+            {"from": name, "to": target},
+            resource_id=_folder_id(src),
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("folders move", resource_id=_folder_id(src))
 
     try:
         src.move(dst)
@@ -250,9 +273,15 @@ def folders_empty(ctx, name, force):
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
-            "Empty folder", {"name": name, "total": folder.total_count or 0}
+            "Empty folder",
+            {"name": name, "total": folder.total_count or 0},
+            resource_id=_folder_id(folder),
         )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("folders empty", resource_id=_folder_id(folder))
 
     folder.empty()
 
@@ -282,8 +311,16 @@ def folders_delete(ctx, name, force):
         click.confirm(f"Delete folder '{name}'?", abort=True)
 
     if ctx.obj.get("dry_run"):
-        output.dry_run_output("Delete folder", {"name": name})
+        output.dry_run_output(
+            "Delete folder",
+            {"name": name},
+            resource_id=_folder_id(folder),
+        )
         return
+
+    from ..confirmation import require_confirmed
+
+    require_confirmed("folders delete", resource_id=_folder_id(folder))
 
     folder.delete()
 

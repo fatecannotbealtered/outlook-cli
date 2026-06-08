@@ -13,7 +13,7 @@ import sys
 import time
 from typing import Any
 
-SCHEMA_VERSION = "1.0"
+SCHEMA_VERSION = "2.0"
 FORMAT_JSON = "json"
 FORMAT_TEXT = "text"
 FORMAT_RAW = "raw"
@@ -383,7 +383,13 @@ def handle_api_error(exc: Exception, exit_code: int | None = None) -> None:
     handle_error(msg, code, exit_code=exit_code)
 
 
-def dry_run_output(action: str, detail: dict[str, Any]) -> None:
+def dry_run_output(
+    action: str,
+    detail: dict[str, Any],
+    *,
+    resource_id: str | None = None,
+    resource_version: str | None = None,
+) -> None:
     """Output a dry-run preview.
 
     If the global confirm machinery is active it will already have returned a
@@ -392,12 +398,20 @@ def dry_run_output(action: str, detail: dict[str, Any]) -> None:
     """
     from .confirmation import preview_payload
 
+    payload = preview_payload(
+        action,
+        detail,
+        resource_id=resource_id,
+        resource_version=resource_version,
+    )
     if is_json():
-        print_json(preview_payload(action, detail))
+        print_json(payload)
     elif not _quiet:
         gray(f"  [DRY RUN] {action}")
         for k, v in detail.items():
             gray(f"    {k}: {v}")
+        gray(f"    confirm_token: {payload['confirm_token']}")
+        gray(f"    expires_at: {payload['expires_at']}")
 
 
 def duration_meta(start_time: float) -> dict[str, int]:
