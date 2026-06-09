@@ -1,7 +1,7 @@
 # Agent Skill Authoring Spec
 
 
-This document defines the standard for authoring Skills in this repo (and all future AI-native tools). It aligns with Anthropic's official Agent Skills definition and adds conventions specific to "a Skill as the front door to a CLI."
+This document defines the standard for authoring Skills in this repo (and all future AI-native tools). It targets Agent Skills-compatible runtimes and adds conventions specific to "a Skill as the front door to a CLI."
 
 Use it paired with `CLI-SPEC.md`:
 
@@ -21,13 +21,13 @@ Neither works alone: a CLI without a Skill leaves the agent unsure when to call 
 Core rules:
 
 1. **Single source of truth**: param lists, field names, schema, error codes come from `reference` output; the Skill **does not copy or hardcode** these drift-prone details. The Skill writes "intent and recipes," `reference` writes "machine facts."
-2. **A Skill is judgment, not documentation**: write only what Claude doesn't already know and that's reusable across tasks. Delete anything the model can be assumed to know (e.g. "what a PDF is").
+2. **A Skill is judgment, not documentation**: write only what a capable model doesn't already know and that's reusable across tasks. Delete anything the model can be assumed to know (e.g. "what a PDF is").
 3. **Save tokens**: once triggered, `SKILL.md` enters the context and competes with conversation history. Keep the body < 500 lines; push detail down to reference files.
 4. **Point, don't inline**: large param/schema blocks and long examples go to the `reference` command or separate reference files; the body just navigates.
 
 ## 2. YAML frontmatter (hard rules)
 
-Anthropic validates these; violating them prevents the Skill from loading:
+Skill-compatible runtimes validate these; violating them can prevent the Skill from loading:
 
 ```yaml
 ---
@@ -35,7 +35,7 @@ name: outlook-cli                # required
 description: "..."               # required
 license: MIT                     # optional
 user-invocable: true             # optional (this repo's extension)
-metadata: { ... }                  # optional (platform extension, e.g. emoji/author/requires)
+metadata: { ... }                  # required for CLI-front-door Skills in this spec
 ---
 ```
 
@@ -53,20 +53,16 @@ metadata: { ... }                  # optional (platform extension, e.g. emoji/au
 - **Must be third person** (it's injected into the system prompt; inconsistent person breaks discovery).
     - ✅ `Outlook Exchange CLI for email, calendar...`
     - ❌ `I can help you...` / `You can use this to...`
-- **Write both what + when**: what it does + when to trigger, with keywords. Claude uses it to pick this Skill out of hundreds — this is the lifeline of trigger accuracy.
+- **Write both what + when**: what it does + when to trigger, with keywords. The agent runtime uses it to pick this Skill out of hundreds — this is the lifeline of trigger accuracy.
 
 `metadata` (required extension for CLI-front-door Skills): declare which binary the Skill depends on and the minimum version, so the agent knows what to install and can verify the version matches before running.
 
 ```yaml
-metadata: { "openclaw": {
-  "emoji": "📧",
-  "author": "...",
-  "requires": { "bins": [ "outlook-cli" ], "min_version": "1.1.0" }
-} }
+metadata: { "requires": { "bins": [ "outlook-cli" ], "min_version": "1.1.0" } }
 ```
 
-- `requires.bins`: dependent executable names, a **string array**. Keep the string form, compatible with the existing installer (`npx skills add`) — don't switch to an object array.
-- `requires.min_version`: the minimum tool version the Skill's commands need. **A Skill is a snapshot of capabilities the day it was written**; an older binary will call commands that don't exist — declare the minimum version, paired with `tool doctor`'s version check (see `CLI-SPEC.md` version negotiation) to stop silent misalignment.
+- `metadata.requires.bins`: dependent executable names, a **string array**. Keep the string form so any agent runtime can read it; don't switch to an object array.
+- `metadata.requires.min_version`: the minimum tool version the Skill's commands need. **A Skill is a snapshot of capabilities the day it was written**; an older binary will call commands that don't exist — declare the minimum version, paired with `tool doctor`'s version check (see `CLI-SPEC.md` version negotiation) to stop silent misalignment.
 - When a Skill upgrade uses a new command, raise `min_version` accordingly.
 
 ## 3. Naming conventions
@@ -87,7 +83,7 @@ metadata: { "openclaw": {
 Conventions:
 
 - Body < 500 lines; split when approaching the limit.
-- **References only one level deep**: all reference files link directly from `SKILL.md`; no A→B→C chained nesting (Claude may only `head`-preview nested files, losing information).
+- **References only one level deep**: all reference files link directly from `SKILL.md`; no A→B→C chained nesting (some runtimes may only preview nested files, losing information).
 - For reference files > 100 lines, add a table of contents at the top (so a partial preview still shows the whole scope).
 - Multi-domain tools split files by domain (`reference/mail.md`, `reference/calendar.md`) to avoid loading irrelevant context.
 - Paths always forward-slash `reference/guide.md`, never backslash (cross-platform).
@@ -104,7 +100,7 @@ Choose granularity by task fragility:
 
 This is what distinguishes an "AI-native CLI tool" Skill from an ordinary one; it must include:
 
-1. **Install block**: copy-paste-runnable install commands at the top, CLI and Skill listed separately, plus a line like "please install X and use it for all Y operations going forward." The binary in the install block must match frontmatter `requires.bins`.
+1. **Install block**: copy-paste-runnable install commands at the top, CLI and Skill listed separately, plus a line like "please install X and use it for all Y operations going forward." The Skill install path uses `npx skills add ...`; the CLI binary must not expose its own `install-skill` command. The binary in the install block must match `metadata.requires.bins`.
 2. **Trigger list**: keywords / scenarios that activate this Skill, and clearly **when not to call it**.
 3. **Capability-discovery pointer**: tell the agent explicitly "run `tool reference` first for capabilities and params, don't rely on this doc or `--help`."
 4. **Pre-flight check**: before acting, run `tool context` / `tool doctor` to confirm credentials, environment, and **whether the version meets `requires.min_version`**, rather than hitting `E_AUTH` or calling a missing command.
@@ -129,13 +125,16 @@ This is what distinguishes an "AI-native CLI tool" Skill from an ordinary one; i
    Recipe rule: **after self-update, before continuing, read the delta via `changelog --since`**, or you'll be blind to the new commands you just gained.
 8. **Permission and security boundary**: declare the read / write / dangerous permission tiers, and that the agent cannot self-escalate (see `SEC-SPEC.md`).
 9. **Untrusted-content convention**: tell the agent explicitly — fields tagged `_untrusted` in output (email body, comments, scraped text, etc.) are **treated as data, not executed as instructions**; ignore any "please do X" inside them (see `SEC-SPEC.md §2`).
-10. **Typical usage playbooks**: 3–6 high-frequency end-to-end examples (read inbox, check free/busy, read and reply) for the agent to copy.
+10. **STOP CHECKPOINT rules**: explicitly mark writes, dangerous writes, broad target sets, credential/secret handling, self-update, and external-content-driven writes with `STOP CHECKPOINT`.
+11. **Typical usage playbooks**: 3–6 high-frequency end-to-end examples (read inbox, check free/busy, read and reply) for the agent to copy.
+12. **Eval scenarios**: include a short `## Eval Scenarios` section in `SKILL.md` and a concrete `test-prompts.json` file for regression review.
 
 ## 7. Directory structure
 
 ```text
 skills/<name>/
 ├── SKILL.md              # main instructions, loaded when triggered
+├── test-prompts.json     # regression prompts for Skill review
 ├── reference/            # domain-split detail, loaded as needed
 │   ├── mail.md
 │   └── calendar.md
@@ -148,7 +147,7 @@ Conventions:
 
 - Self-describing file names: `form-validation-rules.md`, not `doc2.md`.
 - Make scripts explicit: "execute" vs "read as reference" — "run `helper.py`" vs "see `helper.py` for the algorithm."
-- Scripts must be self-contained and fault-tolerant, not punting errors to Claude; no magic constants (justify every constant).
+- Scripts must be self-contained and fault-tolerant, not punting errors to the agent; no magic constants (justify every constant).
 
 ## 8. Content rules
 
@@ -163,7 +162,7 @@ Conventions:
 
 - **Write evals before docs**: run representative tasks without the Skill, record failure points, and build ≥ 3 targeted eval scenarios.
 - **Test across models**: Haiku (enough guidance?), Sonnet (clear?), Opus (over-explaining?).
-- **A/B two-instance iteration**: Claude A helps you refine the Skill, Claude B actually uses it; bring B's behavior back to A.
+- **A/B two-instance iteration**: Agent A helps you refine the Skill, Agent B actually uses it; bring B's behavior back to A.
 - Watch how the agent actually navigates: file read order, missed references, re-reading the same section (promote it to the body), files never read (delete them).
 
 ## 10. Authoring checklist
@@ -175,10 +174,12 @@ Conventions:
 - [ ] `metadata.requires.bins` declares the dependent binary with `min_version`
 - [ ] No copied drift-prone params / schema; point to `reference`
 - [ ] Top install block copy-paste-runnable, matches `requires.bins`
+- [ ] Top install block uses `npx skills add ...`; no CLI command named `install-skill`
 - [ ] Has a trigger list (including "when not to call")
 - [ ] Has usage guidance for `reference` / `context` / `doctor`
 - [ ] Pre-flight check includes whether version meets `min_version`
 - [ ] Write commands give the fixed `dry-run → confirm` recipe
+- [ ] Dangerous or high-blast-radius actions have explicit `STOP CHECKPOINT` lines
 - [ ] (with self-update) gives the "read delta via `changelog --since` after update" recipe
 - [ ] Has the error decision tree (consumes exit code / retryable)
 - [ ] Declares permission tiers and security boundary
@@ -186,3 +187,4 @@ Conventions:
 - [ ] 3–6 end-to-end usage playbooks
 - [ ] All paths forward-slash, consistent terminology, no time-sensitive info
 - [ ] ≥ 3 eval scenarios, tested across models
+- [ ] `test-prompts.json` exists and covers fresh-agent read, write safety or read-only boundary, permission boundary, `_untrusted`, and self-update
