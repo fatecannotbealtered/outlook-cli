@@ -66,6 +66,14 @@ All tests are self-contained: each round-trip creates its own data, verifies, th
 
 **CI note:** Integration tests are **not** run in CI (no real credentials in GitHub Actions). Run them locally before tagging a release.
 
+## Functional contract coverage
+
+Release standard: **Functional Contract Coverage = 100%**. Every public behavior documented in README, Skill, `outlook-cli reference`, `--help`, `context`, `doctor`, `changelog`, or `update` must have automated command-level tests.
+
+For each new or changed command, cover success, invalid arguments, config/auth/permission failure where applicable, upstream failure or timeout where applicable, JSON envelope shape, output schema, exit code, stdout/stderr boundary, and non-interactive behavior. Every bug fix that changes observable behavior needs a regression test.
+
+Numeric line coverage is tracked separately and may ratchet upward, but it does not replace missing contract tests.
+
 ## Pull requests
 
 1. **One logical change per PR** when possible.

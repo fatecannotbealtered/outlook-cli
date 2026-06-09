@@ -65,7 +65,7 @@ Agent 侧约定（同时写进 SKILL-SPEC 的用法）：
 - **落盘必加密**：用平台 keychain，或 AES-256-GCM；密钥由机器绑定因子派生（PBKDF2 / scrypt，足够迭代次数），**绝不明文存**。
 - **文件权限收紧**：凭证 / 配置文件 `0600`（仅属主可读）。
 - **内存最小驻留**：用完即弃，不写日志、不进 stdout/stderr。
-- 令牌的获取 / 刷新 / 过期生命周期见 `CLI-SPEC.md §14.1`，本节只管「静态落盘怎么存才安全」。
+- 令牌的获取 / 刷新 / 过期生命周期见 `CLI-SPEC.md §15.1`，本节只管「静态落盘怎么存才安全」。
 
 ## 5. 供应链（凡分发即适用）
 
@@ -81,8 +81,8 @@ Agent 侧约定（同时写进 SKILL-SPEC 的用法）：
 |--------|---------|
 | 输出脱敏（密码 / token / cookie 不入 stdout·stderr·details·audit） | `CLI-SPEC.md §10` |
 | 写操作 dry-run → confirm，token 绑定操作内容 | `CLI-SPEC.md §7` |
-| 凭证获取 / 刷新 / 过期生命周期 | `CLI-SPEC.md §14.1` |
-| 人工介入（扫码 / 验证码 / 审批） | `CLI-SPEC.md §14.3` |
+| 凭证获取 / 刷新 / 过期生命周期 | `CLI-SPEC.md §15.1` |
+| 人工介入（扫码 / 验证码 / 审批） | `CLI-SPEC.md §15.3` |
 | Skill 权限分层、仅用可信来源 Skill | `SKILL-SPEC.md` |
 | 不提交密钥、第三方商标声明、首推前体检 | `REPO-SPEC.md`（OPEN_SOURCE_CHECKLIST / NOTICE） |
 

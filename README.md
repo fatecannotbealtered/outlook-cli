@@ -116,6 +116,8 @@ npm ci --ignore-scripts
 
 Race tests for Go projects require `CGO_ENABLED=1` and a C compiler. CI installs the Linux race detector toolchain before running `go test -race ./...`.
 
+Release gate: public behavior documented in README, Skill, `reference`, `--help`, `context`, `doctor`, `changelog`, or `update` must have command-level tests. The target is **Functional Contract Coverage = 100%**; numeric line coverage is secondary.
+
 ## Links
 
 - Agent entry: [AGENTS.md](AGENTS.md)

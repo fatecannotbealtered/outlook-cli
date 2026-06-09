@@ -9,3 +9,5 @@ This repository is an AI-native CLI project. Agents must start with
 - Shared [`REPO-SPEC.md`](https://github.com/fatecannotbealtered/ai-native-cli-spec/blob/main/REPO-SPEC.md) for repository layout, release, and documentation changes.
 
 Before completing work, run the relevant checklist from the spec you touched.
+
+Before release, Functional Contract Coverage must remain 100%: every public README / Skill / reference / help / context / doctor / changelog / update behavior needs command-level tests.

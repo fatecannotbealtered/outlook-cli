@@ -121,7 +121,7 @@ Conventions:
 | 6 | Precondition conflict or invalid token | re-read state, then retry |
 | 7 | Retryable transient error (network/rate-limit/server) | back off and retry |
 | 8 | Timeout | back off and retry |
-| 9 | Human action required (see §14.3, optional) | relay to the user, run `resume` once done |
+| 9 | Human action required (see §15.3, optional) | relay to the user, run `resume` once done |
 
 Error codes and exit codes must align:
 
@@ -132,7 +132,7 @@ Error codes and exit codes must align:
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
-- `E_HUMAN_REQUIRED` -> 9 (optional, only when §14.3 is enabled)
+- `E_HUMAN_REQUIRED` -> 9 (optional, only when §15.3 is enabled)
 
 ## 7. Write flow (dry-run -> confirm)
 
@@ -379,7 +379,7 @@ Conventions:
 - **Single source of truth**: `changelog` output is derived from `CHANGELOG.md` (embedded into the binary at build time by `## [version]` section); no separate data maintained. Same source as release notes.
 - `--since <version>` returns only entries strictly newer than that version, for an agent that "last saw version X" to pull the delta.
 - Change categories follow Keep a Changelog: `added` / `changed` / `fixed` / `deprecated` / `removed` / `security`.
-- After a successful self-update, the tool should hint the agent to run `changelog --since <old version>` (see §13).
+- After a successful self-update, the tool should hint the agent to run `changelog --since <old version>` (see §14).
 
 ## 12. Command design conventions
 
@@ -392,7 +392,49 @@ Conventions:
 7. On failure, return a structured error rather than a half-finished success payload.
 8. Avoid ambiguous params; booleans are flags, enums are bounded choices.
 
-## 13. Versioning and compatibility
+## 13. Functional contract coverage and release gate
+
+Functional Contract Coverage (FCC) is the release blocker: every public behavior
+an agent can rely on must have automated command-level test coverage. Numeric
+line or branch coverage is useful engineering telemetry, but it is secondary and
+must not be used as a substitute for missing functional contract tests.
+
+A public functional contract is anything declared in:
+
+- `README.md` / `README_zh.md`, `SKILL.md`, or Skill reference pages;
+- `tool reference`, `--help`, `context`, `doctor`, `changelog`, or `update`
+  output;
+- JSON envelope fields, command output schemas, global flags, error codes, exit
+  codes, retryability, and stdout/stderr behavior;
+- documented config/env variables, credential handling, write safety, update
+  verification, Skill sync, and `_untrusted` security guarantees.
+
+Required coverage for each public command or contract:
+
+- success path;
+- missing/invalid arguments;
+- missing config, missing auth, or permission failure when applicable;
+- upstream API failure, network failure, rate limit, or timeout when applicable;
+- JSON envelope shape, output schema, exit code, and stderr/stdout boundary;
+- non-interactive behavior: no prompts, no blocking, and write commands use
+  `--dry-run` -> `--confirm <token>`;
+- regression test for every bug fix that changes observable behavior.
+
+What `FCC = 100%` means:
+
+- every command/flag/output/error behavior listed in the public contract is
+  mapped to at least one automated test, or explicitly marked non-applicable;
+- command-level tests validate the CLI boundary, not just internal helpers;
+- broad generated code, version constants, build metadata, or unreachable
+  platform guards may be excluded from numeric coverage, but not from FCC if
+  they are documented public behavior;
+- a release cannot be tagged while known FCC gaps remain.
+
+CI should run the unit and command-level suites for every PR. Numeric coverage
+thresholds may ratchet upward over time per repository, but the release standard
+is absolute: public functional contracts must be covered.
+
+## 14. Versioning and compatibility
 
 - `schema_version` is the output schema version, not the tool version.
 - A breaking schema change bumps the major version, e.g. `1.x` -> `2.0`.
@@ -470,11 +512,11 @@ Release verification baseline:
 - Also hint in the result: `run "changelog --since <previous_version>" to see what changed`.
 - Agent convention: after self-update, before continuing, read `changelog --since <old version>` (see the SKILL-SPEC recipe).
 
-## 14. Optional patterns (enable as needed)
+## 15. Optional patterns (enable as needed)
 
 These three patterns are **not for everyone**: implement them if your tool needs them, ignore them otherwise — zero overhead. They let the spec scale with tool complexity — a simple tool stays light, a complex tool need not reinvent the wheel. Each is marked "when applicable."
 
-### 14.1 Credential lifecycle (when tokens expire)
+### 15.1 Credential lifecycle (when tokens expire)
 
 **When applicable**: credentials are not static but expire / need refresh — OAuth access_token (WeChat Official Account ~2h), cookie / session (Xiaohongshu), temporary STS credentials, etc. Tools with static username/password skip this section.
 
@@ -496,7 +538,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - `doctor` adds a `check: "credentials"` item; for near-expiry give `warn` + a renew `fix`.
 - Refresh tokens and secrets are always redacted — never in stdout / stderr / details.
 
-### 14.2 Async job lifecycle (long jobs: submit → poll → fetch result)
+### 15.2 Async job lifecycle (long jobs: submit -> poll -> fetch result)
 
 **When applicable**: the operation can't return a result synchronously — async SQL execution / approval (Archery), bulk send, scrape/crawl jobs, large exports. Commands that return results synchronously skip this section.
 
@@ -521,7 +563,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - A `failed` result uses the standard error envelope; `retryable` indicates whether the whole job can be retried.
 - Submission of a write-type long job still goes through `dry-run → confirm`; the `job_id` is created only after confirm.
 
-### 14.3 Human-in-the-loop checkpoints (when a human must scan / solve captcha / approve)
+### 15.3 Human-in-the-loop checkpoints (when a human must scan / solve captcha / approve)
 
 **When applicable**: a step mid-flow must be completed by a human — QR login / captcha (Xiaohongshu), approver sign-off (Archery), secondary confirmation. Fully automated tools skip this section.
 
@@ -545,7 +587,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - `details.action` is a stable enum describing what the human must do; `details.resume` gives the command to continue after the human is done.
 - Agent convention: on `E_HUMAN_REQUIRED` → relay `message` and the required action to the user → wait for them → run `resume`; do not auto-retry.
 
-## 15. Design checklist
+## 16. Design checklist
 
 > Items marked `(optional)` only apply when the corresponding optional pattern is enabled.
 
@@ -566,6 +608,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - [ ] (with self-update) post-update returns previous/current version and hints to read changelog
 - [ ] Query commands support `fields` / `compact`
 - [ ] List commands support pagination or explicitly state none is needed
+- [ ] Functional Contract Coverage is 100% for public README / Skill / reference / help / context / doctor / changelog / update behavior
 - [ ] All times ISO 8601 UTC
 - [ ] All IDs strings
 - [ ] Secrets redacted end to end
