@@ -27,11 +27,13 @@
   "bin": {
     "outlook-cli": "scripts/run.js"
   },
-  "scripts": {
-    "postinstall": "node scripts/install.js"
+  "optionalDependencies": {
+    "@fatecannotbealtered-/outlook-cli-darwin-x64": "1.1.0",
+    "@fatecannotbealtered-/outlook-cli-linux-x64": "1.1.0",
+    "@fatecannotbealtered-/outlook-cli-win32-arm64": "1.1.0",
+    "@fatecannotbealtered-/outlook-cli-win32-x64": "1.1.0"
   },
   "files": [
-    "scripts/install.js",
     "scripts/run.js",
     "skills/",
     "README.md",
@@ -46,15 +48,6 @@
     "AGENTS.md",
     ".agent/",
     "docs/"
-  ],
-  "os": [
-    "darwin",
-    "linux",
-    "win32"
-  ],
-  "cpu": [
-    "x64",
-    "arm64"
   ],
   "engines": {
     "node": ">=16"

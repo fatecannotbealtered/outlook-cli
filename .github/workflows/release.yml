@@ -98,3 +98,68 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+
+  publish-npm:
+    name: Publish to npm
+    needs: release
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+          always-auth: true
+
+      - name: Verify version consistency
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG_VERSION=${GITHUB_REF#refs/tags/v}
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag version (${TAG_VERSION}) does not match package.json version (${PKG_VERSION})"
+            exit 1
+          fi
+
+      - name: Download release archives
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          gh release download "${GITHUB_REF_NAME}" --dir dist --pattern "*.tar.gz" --pattern "*.zip"
+          find dist -type f \( -name "*.tar.gz" -o -name "*.zip" \) -print
+
+      - name: Prepare npm platform packages
+        run: node scripts/prepare-npm-platform-packages.js dist npm-platform
+
+      - name: Publish to npm
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION=$(node -p "require('./package.json').version")
+          ROOT_PKG=$(node -p "require('./package.json').name")
+
+          for dir in npm-platform/*; do
+            [ -d "$dir" ] || continue
+            PKG=$(node -p "require('./${dir}/package.json').name")
+            if npm view "${PKG}@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
+              echo "npm package ${PKG}@${VERSION} already published; skipping"
+              continue
+            fi
+            npm publish "$dir" --access public --provenance
+          done
+
+          if npm view "${ROOT_PKG}@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
+            echo "npm package ${ROOT_PKG}@${VERSION} already published; skipping"
+            exit 0
+          fi
+          npm publish --access public --provenance
