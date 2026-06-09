@@ -1,20 +1,20 @@
 # AGENT.md — AI-Native Tool Playbook
 
 
-This is the **entry point and playbook** for AI agents working in this repo. Whether you are building a new tool or extending this one, start here: understand how the four specs divide the work, then follow the matching workflow.
+This is the **entry point and playbook** for AI agents working in this repo. Whether you are building a new tool or extending this one, start here: understand how the local specs and the repo skeleton standard divide the work, then follow the matching workflow.
 
 > This `.agent/` directory is a **reusable seed**. To start a new AI-native CLI tool, copy the whole `.agent/` directory plus the root `AGENTS.md`, then follow the "new tool" workflow below.
 
-## How the four specs divide the work
+## How the specs divide the work
 
 | Spec | Covers | In one line |
 |------|--------|-------------|
 | [`CLI-SPEC.md`](CLI-SPEC.md) | CLI machine contract | how the tool **speaks** |
 | [`SKILL-SPEC.md`](SKILL-SPEC.md) | Skill authoring | how the agent **listens, and when to speak** |
-| [`REPO-SPEC.md`](REPO-SPEC.md) | Repo skeleton standard | what the project **looks like** |
 | [`SEC-SPEC.md`](SEC-SPEC.md) | Security baseline | how **not to get burned, or burn others** |
+| [`REPO-SPEC.md`](https://github.com/fatecannotbealtered/ai-native-cli-spec/blob/main/REPO-SPEC.md) | Repo skeleton standard | what the project **looks like** |
 
-Reading order: this file → jump to the spec your task needs. **Read only the one you need**, don't load them all at once.
+Reading order: this file → jump to the spec your task needs. **Read only the one you need**, don't load them all at once. `REPO-SPEC.md` lives in the `ai-native-cli-spec` repo as the shared meta-standard; it is not copied into each consuming tool repo.
 
 ## Hard constraints (never violate; details in CLI-SPEC.md)
 
@@ -30,14 +30,14 @@ Reading order: this file → jump to the spec your task needs. **Read only the o
 
 Run in order; close out each step against the matching spec's checklist:
 
-1. **Lay the skeleton** (→ REPO-SPEC.md): README (bilingual) / LICENSE / CHANGELOG / CONTRIBUTING / SECURITY / `.gitignore` / `.github` workflows; if you wrap a third-party product, add `NOTICE.md` + `docs/COMPATIBILITY.md`.
+1. **Lay the skeleton** (→ shared REPO-SPEC.md): README (bilingual) / LICENSE / CHANGELOG / CONTRIBUTING / SECURITY / `.gitignore` / `.github` workflows; if you wrap a third-party product, add `NOTICE.md` + `docs/COMPATIBILITY.md`.
 2. **Define the contract** (→ CLI-SPEC.md): implement the envelope, exit-code mapping, and error taxonomy *before* the first command. This is the foundation, not an afterthought.
 3. **Build the self-description set** (→ CLI-SPEC.md §11): `reference` / `context` / `doctor` / `changelog`. `changelog` is derived from CHANGELOG.md and embedded at build time.
 4. **Implement commands**: query commands support `--fields` / `--compact` / pagination; write commands go through dry-run/confirm.
 5. **Evaluate optional patterns** (→ CLI-SPEC.md §14, as needed): tokens expire? → credential lifecycle; long-running jobs? → async jobs; QR/captcha/approval? → human-in-the-loop. Do it only if you need it.
 6. **Set the security tier** (→ SEC-SPEC.md): classify T0/T1/T2, then apply injection defense, least privilege, credential-at-rest, and supply chain by tier.
 7. **Write the Skill** (→ SKILL-SPEC.md): frontmatter (with `requires.bins` + `min_version`), trigger list, error decision tree, usage playbooks.
-8. **Set up distribution** (→ REPO-SPEC.md §4b): npm wrapper (`scripts/{install,run}.js`), binary not committed.
+8. **Set up distribution** (→ shared REPO-SPEC.md §4b): npm wrapper (`scripts/{install,run}.js`), binary not committed.
 9. **Self-check**: run all four spec checklists + conformance + CI lint/format.
 
 ## Workflow B: extend this tool (changing existing features)

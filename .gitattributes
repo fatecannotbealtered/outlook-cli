@@ -1,0 +1,21 @@
+# Keep repository text files LF-normalized on every platform.
+* text=auto eol=lf
+
+# Windows command scripts are intentionally CRLF.
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files.
+*.exe binary
+*.dll binary
+*.so binary
+*.dylib binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.ico binary
+*.pdf binary
+*.zip binary
+*.tar.gz binary
+*.tgz binary

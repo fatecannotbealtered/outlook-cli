@@ -200,9 +200,7 @@ def validate_token(
         ):
             if actual_scope.get(key) != expected_scope.get(key):
                 return False, f"confirm token does not match operation {key}"
-        if resource_id is not None and actual_scope.get("resource_id") != str(
-            resource_id
-        ):
+        if resource_id is not None and actual_scope.get("resource_id") != str(resource_id):
             return False, "confirm token does not match resource"
         if resource_version is not None and actual_scope.get("resource_version") != str(
             resource_version

@@ -32,7 +32,9 @@ ERROR_HINTS = {
     "E_NOT_FOUND": "Verify the resource ID from a fresh list/search result.",
     "E_VALIDATION": "Check command arguments.",
     "E_USAGE": "Check command arguments.",
-    "E_CONFIRMATION_REQUIRED": "Run the same write command with --dry-run, then retry with --confirm <token>.",
+    "E_CONFIRMATION_REQUIRED": (
+        "Run the same write command with --dry-run, then retry with --confirm <token>."
+    ),
     "E_CONFLICT": "State or token changed. Re-run --dry-run and use the new confirm_token.",
     "E_SERVER": "Exchange server error. Retry later if the operation is transient.",
     "E_NETWORK": "Check network, VPN, proxy, and OUTLOOK_SERVER.",
@@ -55,9 +57,7 @@ LEGACY_ERROR_MAP = {
     "UNKNOWN_ERROR": "E_UNKNOWN",
 }
 
-ERROR_CODES = {
-    legacy: ERROR_HINTS[semantic] for legacy, semantic in LEGACY_ERROR_MAP.items()
-}
+ERROR_CODES = {legacy: ERROR_HINTS[semantic] for legacy, semantic in LEGACY_ERROR_MAP.items()}
 ERROR_CODES.update(ERROR_HINTS)
 
 EXIT_CODE_BY_ERROR = {
@@ -246,11 +246,7 @@ def print_json(data: Any, meta: dict[str, Any] | None = None) -> None:
             print(data if isinstance(data, str) else json.dumps(data, default=str))
         return
     if is_text():
-        print(
-            data
-            if isinstance(data, str)
-            else json.dumps(data, ensure_ascii=False, default=str)
-        )
+        print(data if isinstance(data, str) else json.dumps(data, ensure_ascii=False, default=str))
         return
     _dump_json(success_envelope(data, meta=meta))
 
@@ -374,11 +370,7 @@ def handle_api_error(exc: Exception, exit_code: int | None = None) -> None:
         code = "E_FORBIDDEN"
     elif "timeout" in lower_msg:
         code = "E_TIMEOUT"
-    elif (
-        "connect" in lower_msg
-        and "disconnect" not in lower_msg
-        and "reconnect" not in lower_msg
-    ):
+    elif "connect" in lower_msg and "disconnect" not in lower_msg and "reconnect" not in lower_msg:
         code = "E_NETWORK"
     handle_error(msg, code, exit_code=exit_code)
 

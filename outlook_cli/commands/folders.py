@@ -74,10 +74,7 @@ def folders_list(ctx, max_depth):
 
     account = get_account()
     try:
-        folders = [
-            _folder_to_dict(f, max_depth=max_depth)
-            for f in account.inbox.parent.children
-        ]
+        folders = [_folder_to_dict(f, max_depth=max_depth) for f in account.inbox.parent.children]
     except Exception as e:
         output.handle_error(f"Failed to list folders: {e}", "SERVER_ERROR", exit_code=7)
 
@@ -114,9 +111,7 @@ def folders_create(ctx, name):
     account = get_account()
     parts = [p.strip() for p in name.split("/") if p.strip()]
     if not parts:
-        output.handle_error(
-            "Folder name cannot be empty", "VALIDATION_ERROR", exit_code=2
-        )
+        output.handle_error("Folder name cannot be empty", "VALIDATION_ERROR", exit_code=2)
 
     parent = account.inbox.parent
     created = []
@@ -193,9 +188,7 @@ def folders_rename(ctx, name, new_name):
         folder.name = new_name
         folder.save(update_fields=["name"])
     except Exception as e:
-        output.handle_error(
-            f"Failed to rename folder: {e}", "SERVER_ERROR", exit_code=7
-        )
+        output.handle_error(f"Failed to rename folder: {e}", "SERVER_ERROR", exit_code=7)
 
     data = {"message": f"Renamed: {old_name} -> {new_name}"}
     if output.is_json():
@@ -217,15 +210,11 @@ def folders_move(ctx, name, target):
     account = get_account()
     src = _find_folder(account, name)
     if not src:
-        output.handle_error(
-            f"Source folder not found: {name}", "NOT_FOUND", exit_code=4
-        )
+        output.handle_error(f"Source folder not found: {name}", "NOT_FOUND", exit_code=4)
 
     dst = _find_folder(account, target)
     if not dst:
-        output.handle_error(
-            f"Target folder not found: {target}", "NOT_FOUND", exit_code=4
-        )
+        output.handle_error(f"Target folder not found: {target}", "NOT_FOUND", exit_code=4)
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
@@ -267,9 +256,7 @@ def folders_empty(ctx, name, force):
         output.handle_error(f"Folder not found: {name}", "NOT_FOUND", exit_code=4)
 
     if not force and not output.is_json() and not ctx.obj.get("confirm"):
-        click.confirm(
-            f"Empty folder '{name}'? All items will be moved to trash.", abort=True
-        )
+        click.confirm(f"Empty folder '{name}'? All items will be moved to trash.", abort=True)
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(

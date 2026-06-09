@@ -33,7 +33,7 @@ def test_log_creates_file(isolate_audit):
 def test_log_entry_format(isolate_audit):
     audit.log("mail list", ["--limit", "10"], 0, 500, account="a@example.com")
     files = audit.files()
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         entry = json.loads(f.readline())
     assert "ts" in entry
     assert entry["ts"].endswith("Z")
@@ -47,7 +47,7 @@ def test_log_entry_format(isolate_audit):
 def test_log_strips_password(isolate_audit):
     audit.log("setup login", ["--email", "a@b.com", "--password", "secret123"], 0, 200)
     files = audit.files()
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         entry = json.loads(f.readline())
     args = entry["args"]
     assert "secret123" not in args
@@ -61,7 +61,7 @@ def test_log_strips_password_equals(isolate_audit):
     """--password=value form is sanitized."""
     audit.log("setup login", ["--email", "a@b.com", "--password=mysecret"], 0, 200)
     files = audit.files()
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         entry = json.loads(f.readline())
     args = entry["args"]
     assert "mysecret" not in str(args)
@@ -71,7 +71,7 @@ def test_log_strips_password_equals(isolate_audit):
 def test_log_strips_token(isolate_audit):
     audit.log("cmd", ["--token", "abc123", "--other", "val"], 0, 100)
     files = audit.files()
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         entry = json.loads(f.readline())
     assert "abc123" not in entry["args"]
     assert "--token" in entry["args"]  # flag kept, value stripped
@@ -82,7 +82,7 @@ def test_log_strips_token(isolate_audit):
 def test_log_strips_confirm_token(isolate_audit):
     audit.log("mail send", ["--confirm", "ct_secret", "--subject", "hi"], 0, 100)
     files = audit.files()
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         entry = json.loads(f.readline())
     assert "ct_secret" not in entry["args"]
     assert "--confirm" in entry["args"]
@@ -102,7 +102,7 @@ def test_multiple_entries(isolate_audit):
     audit.log("mail delete", ["--id", "456"], 0, 300)
     files = audit.files()
     assert len(files) == 1  # same month
-    with open(files[0], "r", encoding="utf-8") as f:
+    with open(files[0], encoding="utf-8") as f:
         lines = f.readlines()
     assert len(lines) == 3
 

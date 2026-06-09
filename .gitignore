@@ -1,42 +1,48 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-*.egg-info/
-dist/
-build/
-*.egg
+# Common base — concatenate with template/<lang>/.gitignore
 
-# Virtual environments
-.venv/
-venv/
-env/
-
-# IDE
+node_modules/
+.env
+.env.local
 .idea/
 .vscode/
 *.swp
 *.swo
 *~
-
-# OS
 .DS_Store
 Thumbs.db
+.claude/
+# Python-specific — append to common/.gitignore
 
-# PyInstaller
-*.manifest
-*.spec
+# Byte-compiled / cache
+__pycache__/
+*.py[cod]
 
-# Node
-node_modules/
-bin/
+# Packaging / build artifacts
+*.egg-info/
+*.egg
+build/
+dist/
 
-# Testing
+# Virtual environments
+.venv/
+venv/
+
+# Test / coverage / lint caches
 .pytest_cache/
+.ruff_cache/
 htmlcov/
 .coverage
 coverage.xml
+
+# PyInstaller
+*.spec
+*.manifest
+
+# --- project-specific ---
+*$py.class
+*.so
+env/
+bin/
 
 # Config (contains credentials)
 config.json

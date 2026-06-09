@@ -219,9 +219,7 @@ class TestSelfDescription:
         assert any(cmd["path"] == "update" for cmd in data["commands"])
         assert any(cmd["path"] == "changelog" for cmd in data["commands"])
         mail_group = next(cmd for cmd in data["commands"] if cmd["path"] == "mail")
-        mail_list = next(
-            cmd for cmd in mail_group["children"] if cmd["path"] == "mail list"
-        )
+        mail_list = next(cmd for cmd in mail_group["children"] if cmd["path"] == "mail list")
         assert mail_list["pagination"]["supported"] is True
 
     def test_context(self):
@@ -384,18 +382,14 @@ class TestUpdateCommand:
     """Test self-update command contract without executing package managers."""
 
     def test_update_check_manual(self):
-        code, stdout, _ = run_cli(
-            "update", "--check", "--manager", "manual", "--compact"
-        )
+        code, stdout, _ = run_cli("update", "--check", "--manager", "manual", "--compact")
         assert code == 0
         data = data_doc(stdout)
         assert data["install_method"] == "manual"
         assert data["supported"] is False
 
     def test_update_requires_confirm(self):
-        code, _, stderr = run_cli(
-            "update", "--manager", "npm", "--target-version", "latest"
-        )
+        code, _, stderr = run_cli("update", "--manager", "npm", "--target-version", "latest")
         assert code == 5
         assert error_code(stderr) == "E_CONFIRMATION_REQUIRED"
 
@@ -420,9 +414,7 @@ class TestUpdateCommand:
         ]
 
     def test_update_invalid_token_is_conflict(self):
-        code, _, stderr = run_cli(
-            "update", "--manager", "manual", "--confirm", "ct_bad"
-        )
+        code, _, stderr = run_cli("update", "--manager", "manual", "--confirm", "ct_bad")
         assert code == 6
         assert error_code(stderr) == "E_CONFLICT"
 
@@ -619,9 +611,7 @@ class TestMissingArgs:
     """Test that missing required args produce helpful errors."""
 
     def test_send_missing_to(self):
-        code, _, _ = run_cli(
-            "mail", "send", "--subject", "Hi", "--body", "Hello", "--dry-run"
-        )
+        code, _, _ = run_cli("mail", "send", "--subject", "Hi", "--body", "Hello", "--dry-run")
         assert code != 0
 
     def test_search_no_args(self):

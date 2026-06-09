@@ -64,7 +64,7 @@ def get_account(shared_mailbox: str = None):
             )
 
         try:
-            from exchangelib import Credentials, Account, Configuration, DELEGATE
+            from exchangelib import DELEGATE, Account, Configuration, Credentials
             from exchangelib.errors import AutoDiscoverFailed
         except ImportError:
             from .output import handle_error as _handle
@@ -288,8 +288,7 @@ def email_to_dict(item, preview_len: int = 500) -> dict:
         "date": iso_utc(item.datetime_received),
         "is_read": item.is_read,
         "has_attachments": bool(item.attachments),
-        "preview": body_clean[:preview_len]
-        + ("..." if len(body_clean) > preview_len else ""),
+        "preview": body_clean[:preview_len] + ("..." if len(body_clean) > preview_len else ""),
         "_untrusted": ["subject", "sender", "to", "cc", "preview"],
     }
 
