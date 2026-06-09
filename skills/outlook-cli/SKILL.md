@@ -132,9 +132,10 @@ outlook-cli update --check --compact
 outlook-cli update --dry-run --compact
 outlook-cli update --confirm <confirm_token> --compact
 outlook-cli changelog --since <previous_version> --compact
+outlook-cli reference --compact
 ```
 
-After a successful update, read the changelog delta before continuing.
+After a successful update, review `signature_status`, ensure `skill_sync_status` is successful, then read the changelog delta and refresh `reference` before continuing.
 
 ## Playbooks
 
@@ -197,5 +198,5 @@ Use these scenarios after changing the CLI or this Skill:
   with the returned token; on `E_CONFLICT`, re-read and dry-run again.
 - Permission boundary: attempt a send while permission mode is not `full` and
   surface `E_FORBIDDEN` without suggesting that the agent can raise permission.
-- Self-update: run update check and dry-run, confirm only with user intent, then
-  read `changelog --since <previous_version>` before continuing.
+- Self-update: run update check and dry-run, confirm only with user intent, ensure
+  the whole Skill directory is synced, then read `changelog --since <previous_version>` before continuing.

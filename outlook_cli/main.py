@@ -540,6 +540,9 @@ def update_cmd(ctx, check_only, manager, target_version):
                 "install_method": plan["install_method"],
                 "supported": plan["supported"],
                 "command": plan["command"],
+                "signature_status": plan["signature_status"],
+                "skill_sync_command": plan["skill_sync_command"],
+                "skill_sync_status": plan["skill_sync_status"],
                 "manual_url": plan["manual_url"],
             }
         )

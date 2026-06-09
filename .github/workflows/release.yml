@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build:
@@ -66,6 +67,32 @@ jobs:
         with:
           name: outlook-cli-${{ runner.os }}
           path: release/*
+
+  release:
+    name: Publish release assets
+    needs: build
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-dist
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release
+          find release-dist -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec cp {} release/ \;
+          find release-dist -type f -name "checksums-*.txt" -exec cat {} \; > release/checksums.txt
+          test -s release/checksums.txt
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign checksums
+        shell: bash
+        run: cosign sign-blob --bundle release/checksums.txt.sigstore.json release/checksums.txt --yes
 
       - name: Upload GitHub Release assets
         uses: softprops/action-gh-release@v2

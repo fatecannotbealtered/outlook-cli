@@ -25,6 +25,10 @@ This document defines the machine contract a CLI must honor when called by an AI
 | `--confirm <token>` | Carry the dry-run token to actually execute the write |
 | `--quiet` | Suppress progress/prompts on stderr, never suppress errors |
 
+`update` commands may add tool-specific flags such as `--target-version` or
+`--channel`, but they must keep the common lifecycle flags: `--check`,
+`--dry-run`, and `--confirm <token>`.
+
 Format responsibilities:
 
 - `json`: structured machine output, the default, and the only format recommended for agents.
@@ -405,9 +409,49 @@ A Skill is a snapshot of the capabilities the day it was written; once the binar
 - The Skill declares a minimum compatible version in frontmatter (see SKILL-SPEC `requires.min_version`).
 - `doctor` should include a check "does the current version meet the declared minimum"; if not, give a `fix` (upgrade command), status `fail`.
 
-### Self-update loop
+### Self-update and Skill-sync loop
 
-For tools with `self-update`, after a successful update they **must close the knowledge-refresh loop**, or the agent won't know what new capabilities it just gained:
+For tools with `self-update`, after a successful update they **must close both
+refresh loops**:
+
+1. the binary/package is current;
+2. the bundled Agent Skill directory is current, with the same end state as
+   running `npx skills add <repo> -y -g`.
+
+The user-facing Skill install command stays `npx skills add ...`; the binary
+must not expose a separate `install-skill` command. During update, however, the
+tool owns the full lifecycle and must either sync the entire `skills/<tool>/`
+directory or return an explicit `skill_sync_status` and `skill_sync_command`
+that the agent can execute before using new behavior.
+
+Required update contract:
+
+- `update --check` is read-only. It reports current/target versions,
+  install method, whether a binary/package update is available, whether Skill
+  sync is needed or supported, and signature/checksum availability.
+- `update --dry-run` returns a preview with every local change: binary/package
+  update, Skill directory sync, signature/checksum verification, and the
+  `confirm_token`.
+- `update --confirm <token>` performs the update. It must verify release
+  integrity before replacing files or running a package manager update.
+- If update succeeds, return `previous_version`, `current_version`,
+  `skill_sync_status`, and enough verification metadata for the agent to audit
+  what happened.
+- If binary/package update succeeds but Skill sync fails, return a non-success
+  or partial-success status with `skill_sync_command`; the agent must not use
+  newly documented behavior until the Skill sync has completed.
+
+Release verification baseline:
+
+- Verify the archive/package against `checksums.txt`; checksum mismatch, missing
+  checksum file, or missing archive entry fails closed.
+- Signed releases should sign `checksums.txt` with Sigstore/Cosign keyless
+  signing from the tagged GitHub Actions release workflow. Verifiers should
+  validate the bundle against the expected repository workflow identity and the
+  GitHub OIDC issuer.
+- When local signature verification cannot run, the result must say so in
+  structured fields (`signature_verified: false`, `signature_policy`,
+  `signature_reason`) rather than implying checksum verification is a signature.
 
 - After `update --confirm <token>` succeeds, return `previous_version` and `current_version` in `data`.
 - Also hint in the result: `run "changelog --since <previous_version>" to see what changed`.
@@ -503,6 +547,9 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - [ ] Provides `reference` / `context` / `doctor`
 - [ ] Provides `changelog [--since]`, same source as CHANGELOG/release-notes
 - [ ] Tool reports its own version (`--version` and `context.version`)
+- [ ] (with self-update) `update --check` / `--dry-run` / `--confirm` are implemented
+- [ ] (with self-update) release integrity is verified, and signature status is explicit
+- [ ] (with self-update) whole Skill directory sync is part of the update result
 - [ ] (with self-update) post-update returns previous/current version and hints to read changelog
 - [ ] Query commands support `fields` / `compact`
 - [ ] List commands support pagination or explicitly state none is needed

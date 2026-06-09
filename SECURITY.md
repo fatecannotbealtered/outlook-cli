@@ -91,6 +91,8 @@ disable audit logging.
 - Checksums are downloaded from the matching release and verified.
 - Checksum mismatch or missing checksum hard-fails installation.
 - Release binaries are expected to be built by CI from tagged source.
+- Releases sign `checksums.txt` with Sigstore/Cosign keyless signing from the tagged GitHub Actions release workflow and publish `checksums.txt.sigstore.json`.
+- Self-update results must sync the whole `skills/outlook-cli/` directory or return a `skill_sync_command` equivalent to `npx skills add fatecannotbealtered/outlook-cli -y -g`.
 - Dependencies are monitored through Dependabot and CI.
 - `scripts/install.js` extracts a downloaded archive but does not execute
   newly downloaded scripts.

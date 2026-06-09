@@ -36,6 +36,8 @@ const ext = isWindows ? ".zip" : ".tar.gz";
 const archiveName = `${NAME}-${VERSION}-${platform}-${arch}${ext}`;
 const GITHUB_URL = `https://github.com/${REPO}/releases/download/v${VERSION}/${archiveName}`;
 const CHECKSUM_URL = `https://github.com/${REPO}/releases/download/v${VERSION}/checksums.txt`;
+const CHECKSUM_BUNDLE_URL = `${CHECKSUM_URL}.sigstore.json`;
+const REQUIRE_SIGNATURE = process.env["OUTLOOK_CLI_REQUIRE_SIGNATURE"] === "1";
 
 const binDir = path.join(__dirname, "..", "bin");
 const dest = path.join(binDir, NAME + (isWindows ? ".exe" : ""));
@@ -61,11 +63,47 @@ function download(url, destPath) {
   execFileSync("curl", args, { stdio: ["ignore", "ignore", "pipe"] });
 }
 
+function commandExists(command) {
+  try {
+    if (isWindows) {
+      execFileSync("where", [command], { stdio: "ignore" });
+    } else {
+      execFileSync("sh", ["-c", `command -v "${command}" >/dev/null 2>&1`], { stdio: "ignore" });
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 function verifyChecksum(filePath, expectedHash) {
   const hash = crypto.createHash("sha256").update(fs.readFileSync(filePath)).digest("hex");
   if (hash !== expectedHash) {
     throw new Error(`Checksum mismatch!\n  Expected: ${expectedHash}\n  Actual:   ${hash}`);
   }
+}
+
+function escapeRegex(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function verifyChecksumSignature(checksumPath, bundlePath) {
+  if (!commandExists("cosign")) {
+    const msg = "cosign is not installed; checksum signature verification skipped";
+    if (REQUIRE_SIGNATURE) throw new Error(msg);
+    console.warn(msg);
+    return false;
+  }
+  const identity = `^https://github\\.com/${escapeRegex(REPO)}/\\.github/workflows/release\\.yml@refs/tags/v.*$`;
+  execFileSync("cosign", [
+    "verify-blob",
+    "--bundle", bundlePath,
+    "--certificate-identity-regexp", identity,
+    "--certificate-oidc-issuer", "https://token.actions.githubusercontent.com",
+    checksumPath,
+  ], { stdio: ["ignore", "ignore", "pipe"] });
+  console.log("Checksum signature verified");
+  return true;
 }
 
 function install() {
@@ -77,6 +115,14 @@ function install() {
     console.log(`Downloading ${NAME} v${VERSION} for ${platform}-${arch}...`);
     download(GITHUB_URL, archivePath);
     download(CHECKSUM_URL, checksumPath);
+    const bundlePath = path.join(tmpDir, "checksums.txt.sigstore.json");
+    try {
+      download(CHECKSUM_BUNDLE_URL, bundlePath);
+      verifyChecksumSignature(checksumPath, bundlePath);
+    } catch (err) {
+      if (REQUIRE_SIGNATURE) throw err;
+      console.warn(`Checksum signature verification unavailable: ${err.message}`);
+    }
 
     // Find the SHA256 entry for our archive; missing entry is a hard fail (can't verify integrity).
     let expectedHash = "";

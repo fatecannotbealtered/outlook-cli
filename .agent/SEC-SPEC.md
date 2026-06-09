@@ -69,7 +69,15 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 
 ## 5. Supply chain (applies to anything distributed)
 
-- **Integrity verification**: install scripts pulling a binary must verify checksum / signature, **hard-fail on mismatch**, no silent degradation.
+- **Integrity verification**: install scripts and self-update commands pulling a
+  binary must verify checksums, **hard-fail on mismatch**, and report signature
+  verification status explicitly. A checksum proves bytes match a checksum file;
+  it does not prove the checksum file came from the publisher.
+- **Signed release material**: release pipelines should sign `checksums.txt`
+  with Sigstore/Cosign keyless signing from the tagged GitHub Actions release
+  workflow, publishing the bundle alongside the checksum file. Verification must
+  bind the signature to the expected repository workflow identity and GitHub OIDC
+  issuer.
 - **Dependency locking + audit**: commit a lockfile; CI runs `npm audit` / `pip-audit` and blocks high-severity dependencies.
 - **Traceable builds**: release artifacts are built by CI from tagged source, no hand-uploaded unknown binaries.
 - **No remote scripts in postinstall**: don't execute code freshly pulled from the network at install time.
@@ -97,7 +105,7 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 
 - [ ] Default `read-only`, agent cannot self-escalate
 - [ ] Credentials encrypted at rest + file permission `0600`
-- [ ] Distribution integrity verified, hard-fail on mismatch; dependencies locked + audited
+- [ ] Distribution checksum verified, hard-fail on mismatch; release checksum is signed or signature status is explicitly reported; dependencies locked + audited
 
 **T2 (high-risk / irreversible)**
 
