@@ -87,15 +87,16 @@ disable audit logging.
 
 ## Supply Chain
 
-- npm `postinstall` downloads release archives from GitHub Releases.
-- Checksums are downloaded from the matching release and verified.
-- Checksum mismatch or missing checksum hard-fails installation.
+- npm installation uses the main wrapper package plus OS/CPU-specific optional platform packages; it does not download GitHub Release binaries at install time.
+- npm packages are published from the tagged GitHub Actions workflow with provenance; npm registry integrity and provenance cover the npm install path.
+- Standalone GitHub binary install/update paths verify release archives against `checksums.txt`.
+- Checksum mismatch or missing checksum hard-fails standalone installation/update.
 - Release binaries are expected to be built by CI from tagged source.
 - Releases sign `checksums.txt` with Sigstore/Cosign keyless signing from the tagged GitHub Actions release workflow and publish `checksums.txt.sigstore.json`.
 - Self-update results must sync the whole `skills/outlook-cli/` directory or return a `skill_sync_command` equivalent to `npx skills add fatecannotbealtered/outlook-cli -y -g`.
 - Dependencies are monitored through Dependabot and CI.
-- `scripts/install.js` extracts a downloaded archive but does not execute
-  newly downloaded scripts.
+- The npm wrapper resolves the already-installed platform package and executes
+  the bundled binary; it does not run an install-time downloader.
 
 ## Reporting a Vulnerability
 

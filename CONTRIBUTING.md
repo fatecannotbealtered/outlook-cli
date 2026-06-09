@@ -7,7 +7,7 @@ Thank you for improving outlook-cli. This document describes how to build, test,
 ## Development setup
 
 - Python **3.10+**
-- Optional: **Node.js 16+** if you work on npm install scripts
+- Optional: **Node.js 16+** if you work on the npm wrapper or platform-package scripts
 
 Clone and verify:
 

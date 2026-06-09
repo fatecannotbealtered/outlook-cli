@@ -14,4 +14,5 @@ Run this checklist before publishing or cutting a release.
 - [ ] `ruff check outlook_cli/ tests/` passes.
 - [ ] `ruff format --check outlook_cli/ tests/` passes.
 - [ ] Release artifacts are built by CI from a signed/tagged source revision.
-- [ ] npm postinstall verifies checksums and hard-fails on mismatch.
+- [ ] npm publishes the main wrapper package and OS/CPU platform packages with provenance.
+- [ ] Standalone binary install/update paths verify checksums and hard-fail on mismatch.
