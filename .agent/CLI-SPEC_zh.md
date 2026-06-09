@@ -424,6 +424,15 @@ update 必须遵守的契约：
 - 更新成功后，返回 `previous_version`、`current_version`、`skill_sync_status`，以及足够审计的校验元数据。
 - 如果二进制/包更新成功但 Skill 同步失败，必须返回非成功或部分成功状态，并给出 `skill_sync_command`；Agent 在 Skill 同步完成前不得使用新文档能力。
 
+版本通知契约：
+
+- `update --check` 主动检查最新 release，并刷新本地更新通知缓存。
+- `doctor` 可以用短超时主动检查；网络失败不得单独导致 `doctor` 失败。
+- `context` 和 `--help` 只读本地缓存，不得联系远程 registry 或 GitHub。
+- 有可用更新时，JSON 命令数据包含 `notices[]`，字段包括
+  `type: "update_available"`、当前/最新版本、安装方式、
+  `recommended_command`、已知 release URL、检查时间和机器可读的下一步。文本/help 输出可追加一句简短提示。
+
 release 校验基线：
 
 - 按 `checksums.txt` 校验归档/包；checksum 不匹配、缺失 checksum 文件、或缺少当前归档条目，都必须失败关闭。

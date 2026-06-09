@@ -53,6 +53,10 @@ class FlexibleGroup(click.Group):
             i += 1
         return super().parse_args(ctx, global_args + remaining)
 
+    def format_help(self, ctx, formatter):
+        super().format_help(ctx, formatter)
+        _format_cached_update_help(formatter)
+
 
 @click.group(cls=FlexibleGroup)
 @click.version_option(__version__, prog_name="outlook-cli")
@@ -160,6 +164,21 @@ def _register_commands():
     cli.add_command(doctor_cmd, "doctor")
     cli.add_command(changelog_cmd, "changelog")
     cli.add_command(update_cmd, "update")
+
+
+def _format_cached_update_help(formatter):
+    from .updater import read_cached_update_notices
+
+    notices = read_cached_update_notices()
+    if not notices:
+        return
+    notice = notices[0]
+    formatter.write_paragraph()
+    formatter.write_text(
+        "Update available: outlook-cli "
+        f"{notice.get('current_version')} -> {notice.get('latest_version')}. "
+        f"Run: {notice.get('recommended_command')}"
+    )
 
 
 # --- Helper decorators ---
@@ -399,6 +418,11 @@ def context_cmd():
             "compatible": _version_at_least(__version__, SKILL_MIN_VERSION),
         },
     }
+    from .updater import read_cached_update_notices
+
+    notices = read_cached_update_notices()
+    if notices:
+        data["notices"] = notices
     output.print_json(data)
 
 
@@ -468,7 +492,13 @@ def doctor_cmd():
             "fix": exchangelib_fix,
         }
     )
-    output.print_json({"checks": checks})
+    from .updater import detect_install_method, refresh_update_notices
+
+    notices = refresh_update_notices(detect_install_method("auto"), "doctor")
+    data = {"checks": checks}
+    if notices:
+        data["notices"] = notices
+    output.print_json(data)
 
 
 def _version_at_least(current: str, minimum: str) -> bool:
@@ -518,12 +548,18 @@ def update_cmd(ctx, check_only, manager, target_version):
         detect_install_method,
         execute_update,
         plan_update,
+        update_notices_from_status,
+        write_update_notice_cache,
     )
 
     resolved_manager = detect_install_method(manager)
 
     if check_only:
         data = check_update(resolved_manager)
+        notices = update_notices_from_status(data, "update_check")
+        if notices:
+            data["notices"] = notices
+        write_update_notice_cache(notices)
         output.print_json(data)
         return
 

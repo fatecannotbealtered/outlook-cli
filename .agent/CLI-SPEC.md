@@ -441,6 +441,19 @@ Required update contract:
   or partial-success status with `skill_sync_command`; the agent must not use
   newly documented behavior until the Skill sync has completed.
 
+Version notification contract:
+
+- `update --check` actively checks the latest release and refreshes the local
+  update notice cache.
+- `doctor` may actively check with a short timeout; network failure must not
+  make `doctor` fail by itself.
+- `context` and `--help` only read the local cache and must not contact remote
+  registries or GitHub.
+- When an update is available, JSON command data includes `notices[]` with
+  `type: "update_available"`, current/latest versions, install method,
+  `recommended_command`, release URL when known, checked-at timestamp, and
+  machine-readable next steps. Text/help output may append one concise hint.
+
 Release verification baseline:
 
 - Verify the archive/package against `checksums.txt`; checksum mismatch, missing
