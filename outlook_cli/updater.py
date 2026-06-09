@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import shutil
 import subprocess
 import sys
@@ -19,6 +20,9 @@ PYPI_PACKAGE = "outlook-cli"
 SKILL_REPO = "fatecannotbealtered/outlook-cli"
 NPM_LATEST_URL = "https://registry.npmjs.org/@fatecannotbealtered-%2Foutlook-cli/latest"
 PYPI_URL = "https://pypi.org/pypi/outlook-cli/json"
+GITHUB_RELEASES_URL = "https://github.com/fatecannotbealtered/outlook-cli/releases"
+UPDATE_NOTICE_TTL_SECONDS = 24 * 60 * 60
+NO_UPDATE_CHECK_ENV = "OUTLOOK_CLI_NO_UPDATE_CHECK"
 
 
 def detect_install_method(requested: str = "auto") -> str:
@@ -85,14 +89,14 @@ def _read_json_url(url: str, timeout: float = 5.0) -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def latest_version(manager: str) -> tuple[str | None, str | None]:
+def latest_version(manager: str, timeout: float = 5.0) -> tuple[str | None, str | None]:
     """Return (latest_version, error_message)."""
     try:
         if manager == "npm":
-            data = _read_json_url(NPM_LATEST_URL)
+            data = _read_json_url(NPM_LATEST_URL, timeout=timeout)
             return str(data.get("version") or ""), None
         if manager == "pip":
-            data = _read_json_url(PYPI_URL)
+            data = _read_json_url(PYPI_URL, timeout=timeout)
             return str(data.get("info", {}).get("version") or ""), None
         return None, "manual installs do not expose a package registry"
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
@@ -101,9 +105,9 @@ def latest_version(manager: str) -> tuple[str | None, str | None]:
         return None, str(exc)
 
 
-def check_update(manager: str) -> dict[str, Any]:
+def check_update(manager: str, timeout: float = 5.0) -> dict[str, Any]:
     """Build a read-only update status payload."""
-    latest, err = latest_version(manager)
+    latest, err = latest_version(manager, timeout=timeout)
     command = update_command(manager)
     return {
         "current_version": __version__,
@@ -112,11 +116,147 @@ def check_update(manager: str) -> dict[str, Any]:
         "install_method": manager,
         "supported": manager in {"npm", "pip"},
         "command": command,
+        "release_url": release_url(manager),
         "signature_status": signature_status(manager),
         "skill_sync_command": skill_sync_command(),
         "skill_sync_status": "not_run",
         "error": err or "",
     }
+
+
+def release_url(manager: str) -> str:
+    """Return the human release/source page for an update method."""
+    if manager == "npm":
+        return "https://www.npmjs.com/package/@fatecannotbealtered-/outlook-cli"
+    if manager == "pip":
+        return "https://pypi.org/project/outlook-cli/"
+    return GITHUB_RELEASES_URL
+
+
+def refresh_update_notices(manager: str, source: str, timeout: float = 2.0) -> list[dict[str, Any]]:
+    """Actively check for notices for maintenance commands."""
+    if update_notice_auto_disabled():
+        return []
+    try:
+        status = check_update(manager, timeout=timeout)
+    except Exception:
+        return read_cached_update_notices()
+    notices = update_notices_from_status(status, source)
+    write_update_notice_cache(notices)
+    return notices
+
+
+def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict[str, Any]]:
+    """Convert update status data into Agent-facing notices."""
+    if not status.get("update_available"):
+        return []
+    current = str(status.get("current_version") or __version__)
+    latest = str(status.get("latest_version") or status.get("target_version") or "")
+    command = status.get("command") or []
+    if isinstance(command, list):
+        recommended = shlex.join(str(part) for part in command) if command else "outlook-cli update --dry-run --compact"
+    else:
+        recommended = str(command) or "outlook-cli update --dry-run --compact"
+    return [
+        {
+            "type": "update_available",
+            "severity": "info",
+            "message": f"outlook-cli {latest} is available (current {current})",
+            "current_version": current,
+            "latest_version": latest,
+            "update_available": True,
+            "install_method": status.get("install_method", ""),
+            "recommended_command": recommended,
+            "release_url": status.get("release_url") or GITHUB_RELEASES_URL,
+            "checked_at": _now_iso(),
+            "source": source,
+            "next_steps": [
+                "run the recommended command",
+                "after update, run outlook-cli changelog --since "
+                f"{current} --compact",
+                "refresh outlook-cli reference --compact before using new behavior",
+            ],
+        }
+    ]
+
+
+def read_cached_update_notices() -> list[dict[str, Any]]:
+    """Read a non-stale update notice cache without touching the network."""
+    if update_notice_auto_disabled():
+        return []
+    path = update_notice_cache_path()
+    try:
+        cache = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return []
+    checked_at = float(cache.get("checked_at_epoch") or 0)
+    if checked_at <= 0 or (time_now() - checked_at) > UPDATE_NOTICE_TTL_SECONDS:
+        return []
+    notices = []
+    for notice in cache.get("notices") or []:
+        if notice.get("type") == "update_available" and notice.get("update_available"):
+            cloned = dict(notice)
+            cloned["source"] = "cache"
+            notices.append(cloned)
+    return notices
+
+
+def write_update_notice_cache(notices: list[dict[str, Any]]) -> None:
+    """Write or clear update notice cache."""
+    if update_notice_auto_disabled():
+        return
+    path = update_notice_cache_path()
+    if not notices:
+        try:
+            path.unlink()
+        except OSError:
+            pass
+        return
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        now = time_now()
+        for notice in notices:
+            notice["checked_at"] = _now_iso(now)
+        path.write_text(
+            json.dumps(
+                {
+                    "checked_at_epoch": now,
+                    "checked_at": _now_iso(now),
+                    "notices": notices,
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+    except OSError:
+        return
+
+
+def update_notice_cache_path() -> Path:
+    from .config import config_dir
+
+    return config_dir() / "update-check.json"
+
+
+def update_notice_auto_disabled() -> bool:
+    value = os.environ.get(NO_UPDATE_CHECK_ENV, "").strip().lower()
+    if value in {"1", "true", "yes"}:
+        return True
+    return bool(os.environ.get("PYTEST_CURRENT_TEST"))
+
+
+def time_now() -> float:
+    import time
+
+    return time.time()
+
+
+def _now_iso(epoch: float | None = None) -> str:
+    import datetime as _dt
+
+    if epoch is None:
+        epoch = time_now()
+    return _dt.datetime.fromtimestamp(epoch, tz=_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
 
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
