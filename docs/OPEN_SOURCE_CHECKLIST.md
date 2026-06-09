@@ -10,6 +10,7 @@ Run this checklist before publishing or cutting a release.
 - [ ] `outlook-cli context --compact` reports version and credential status without secrets.
 - [ ] `outlook-cli doctor --compact` reports version compatibility.
 - [ ] `outlook-cli changelog --since <old-version>` works from `CHANGELOG.md`.
+- [ ] Functional Contract Coverage is 100%: public README, Skill, `reference`, `--help`, `context`, `doctor`, `changelog`, and `update` behavior has command-level tests.
 - [ ] `python -m pytest -q` passes.
 - [ ] `ruff check outlook_cli/ tests/` passes.
 - [ ] `ruff format --check outlook_cli/ tests/` passes.

@@ -65,7 +65,7 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 - **Encrypt at rest**: use the platform keychain, or AES-256-GCM; derive the key from a machine-bound factor (PBKDF2 / scrypt, sufficient iterations), **never store plaintext**.
 - **Tighten file permissions**: credential / config files `0600` (owner-readable only).
 - **Minimal memory residency**: discard after use, don't log, don't put in stdout/stderr.
-- Token acquire / refresh / expiry lifecycle is in `CLI-SPEC.md §14.1`; this section only covers "how to store static data at rest safely."
+- Token acquire / refresh / expiry lifecycle is in `CLI-SPEC.md §15.1`; this section only covers "how to store static data at rest safely."
 
 ## 5. Supply chain (applies to anything distributed)
 
@@ -88,8 +88,8 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 |----------------|---------------|
 | Output redaction (password / token / cookie out of stdout·stderr·details·audit) | `CLI-SPEC.md §10` |
 | Write dry-run → confirm, token bound to operation | `CLI-SPEC.md §7` |
-| Credential acquire / refresh / expiry lifecycle | `CLI-SPEC.md §14.1` |
-| Human-in-the-loop (QR / captcha / approval) | `CLI-SPEC.md §14.3` |
+| Credential acquire / refresh / expiry lifecycle | `CLI-SPEC.md §15.1` |
+| Human-in-the-loop (QR / captcha / approval) | `CLI-SPEC.md §15.3` |
 | Skill permission tiers, only trusted-source Skills | `SKILL-SPEC.md` |
 | No committed secrets, third-party trademark notice, pre-publish check | `REPO-SPEC.md` (OPEN_SOURCE_CHECKLIST / NOTICE) |
 

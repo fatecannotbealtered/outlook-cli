@@ -119,7 +119,7 @@
 | 6    | 前置条件冲突或 token 失效   | 重新读取状态后重试              |
 | 7    | 可重试瞬时错误（网络/限流/服务端） | 退避后重试                  |
 | 8    | 超时                 | 退避后重试                  |
-| 9    | 需人工介入（见 §14.3，可选） | 转述给用户，待其完成后跑 `resume`  |
+| 9    | 需人工介入（见 §15.3，可选） | 转述给用户，待其完成后跑 `resume`  |
 
 错误码与 exit code 必须一致：
 
@@ -130,7 +130,7 @@
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
-- `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §14.3 时）
+- `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §15.3 时）
 
 ## 7. 写操作流程（dry-run -> confirm）
 
@@ -377,7 +377,7 @@ tool changelog --since 1.0.3      # 只返回比 1.0.3 新的版本
 - **单一真相源**：`changelog` 输出从 `CHANGELOG.md` 派生（构建时按 `## [version]` 段落嵌入二进制），不另维护数据。与 release-notes 同源。
 - `--since <version>` 只返回严格高于该版本的条目，供「上次见过 X 版本」的 Agent 拉增量。
 - 变更分类沿用 Keep a Changelog：`added` / `changed` / `fixed` / `deprecated` / `removed` / `security`。
-- 自更新成功后，工具应在结果中提示 Agent 运行 `changelog --since <旧版本>`（见 §13）。
+- 自更新成功后，工具应在结果中提示 Agent 运行 `changelog --since <旧版本>`（见 §14）。
 
 ## 12. 命令设计约定
 
@@ -390,7 +390,38 @@ tool changelog --since 1.0.3      # 只返回比 1.0.3 新的版本
 7. 命令失败时优先返回结构化错误，不输出半截成功 payload。
 8. 命令参数应避免二义性；布尔值用 flag，枚举值用有限选项。
 
-## 13. 版本与兼容策略
+## 13. 功能契约覆盖率与发布门禁
+
+功能契约覆盖率（Functional Contract Coverage，FCC）是发布阻断标准：Agent
+能依赖的每一个公开行为，都必须有自动化命令级测试覆盖。代码行覆盖率或分支覆盖率是有用的工程指标，但它是辅助指标，不能替代缺失的功能契约测试。
+
+公开功能契约包括以下位置声明的任何行为：
+
+- `README.md` / `README_zh.md`、`SKILL.md` 或 Skill reference 页面；
+- `tool reference`、`--help`、`context`、`doctor`、`changelog`、`update` 输出；
+- JSON envelope 字段、命令输出 schema、全局参数、错误码、exit code、retryable、stdout/stderr 边界；
+- 已记录的配置/环境变量、凭证处理、写操作安全、自更新校验、Skill 同步和 `_untrusted` 安全承诺。
+
+每个公开命令或契约至少覆盖：
+
+- 成功路径；
+- 缺失/非法参数；
+- 配置缺失、认证缺失或权限失败（适用时）；
+- 上游 API 失败、网络失败、限流或超时（适用时）；
+- JSON envelope 形状、输出 schema、exit code、stdout/stderr 边界；
+- 非交互行为：不提示、不阻塞，写命令使用 `--dry-run` -> `--confirm <token>`；
+- 每个影响可观察行为的 bug fix 都必须带回归测试。
+
+`FCC = 100%` 的含义：
+
+- 公开契约中列出的每个命令、参数、输出、错误行为，都映射到至少一个自动化测试，或明确标注为不适用；
+- 命令级测试验证 CLI 边界，而不仅仅测试内部 helper；
+- 生成代码、版本常量、构建元数据或不可达平台保护分支可以从数字覆盖率中排除，但如果它们是文档化公开行为，就不能从 FCC 中排除；
+- 存在已知 FCC 缺口时，不得打发布 tag。
+
+CI 应在每个 PR 上运行单测和命令级测试。数字覆盖率门槛可以按仓库逐步抬升，但发布标准是绝对的：公开功能契约必须被覆盖。
+
+## 14. 版本与兼容策略
 
 - `schema_version` 表示输出 schema 版本，不等同于工具版本。
 - 破坏性 schema 变更升级主版本，例如 `1.x` -> `2.0`。
@@ -427,9 +458,9 @@ update 必须遵守的契约：
 版本通知契约：
 
 - `update --check` 主动检查最新 release，并刷新本地更新通知缓存。
-- `doctor` 可以用短超时主动检查；网络失败不得单独导致 `doctor` 失败。
-- `context` 和 `--help` 只读本地缓存，不得联系远程 registry 或 GitHub。
-- 有可用更新时，JSON 命令数据包含 `notices[]`，字段包括
+- `doctor` 可以用较短超时主动检查；网络失败本身不得导致 `doctor` 失败。
+- `context` 和 `--help` 只读取本地缓存，不得访问远程 registry 或 GitHub。
+- 有可用更新时，JSON 命令数据中包含 `notices[]`，字段包括
   `type: "update_available"`、当前/最新版本、安装方式、
   `recommended_command`、已知 release URL、检查时间和机器可读的下一步。文本/help 输出可追加一句简短提示。
 
@@ -443,11 +474,11 @@ release 校验基线：
 - 同时在结果中提示：`run "changelog --since <previous_version>" to see what changed`。
 - Agent 约定：自更新后、继续干活前，先读 `changelog --since <旧版本>`（见 SKILL-SPEC 配方）。
 
-## 14. 可选模式（按需启用）
+## 15. 可选模式（按需启用）
 
 以下三种模式**不是人人必做**：工具用得上就照这里实现，用不上就忽略，零负担。它们让规范随工具复杂度伸缩——简单工具保持轻，复杂工具不必重新发明轮子。每条都标了「何时适用」。
 
-### 14.1 凭证生命周期（令牌会过期时）
+### 15.1 凭证生命周期（令牌会过期时）
 
 **何时适用**：凭证不是静态的，而是会过期 / 需刷新的——OAuth access_token（微信公众号约 2h）、cookie / session（小红书）、临时 STS 凭证等。静态用户名密码的工具跳过本节。
 
@@ -469,7 +500,7 @@ release 校验基线：
 - `doctor` 增一项 `check: "credentials"`，对临近过期给 `warn` + 续期 `fix`。
 - 刷新令牌、secret 一律脱敏，绝不出现在 stdout / stderr / details。
 
-### 14.2 异步任务生命周期（长任务：提交 → 轮询 → 取结果）
+### 15.2 异步任务生命周期（长任务：提交 -> 轮询 -> 取结果）
 
 **何时适用**：操作不能同步返回结果——SQL 异步执行 / 审批（Archery）、批量群发、采集 / 爬取任务、大导出。同步即得结果的命令跳过本节。
 
@@ -494,7 +525,7 @@ release 校验基线：
 - `failed` 的结果用标准 error envelope，`retryable` 指明能否重试整个任务。
 - 写类长任务的提交仍走 `dry-run → confirm`；confirm 后才落 `job_id`。
 
-### 14.3 人工介入检查点（需要人来扫码 / 验证码 / 审批时）
+### 15.3 人工介入检查点（需要人来扫码 / 验证码 / 审批时）
 
 **何时适用**：流程中途必须由人完成某步——扫码登录 / 验证码（小红书）、审批人放行（Archery）、二次确认等。全自动工具跳过本节。
 
@@ -518,7 +549,7 @@ release 校验基线：
 - `details.action` 用稳定枚举说明需要人做什么，`details.resume` 给出人工完成后的续跑命令。
 - Agent 约定：收到 `E_HUMAN_REQUIRED` → 向用户转述 `message` 与所需动作 → 等用户完成 → 跑 `resume`，不自动重试。
 
-## 15. 设计检查清单
+## 16. 设计检查清单
 
 > 标 `（可选）` 的仅当对应可选模式启用时才需勾。
 
@@ -539,6 +570,7 @@ release 校验基线：
 - [ ] （含 self-update 时）更新后回传 previous/current 版本并提示读 changelog
 - [ ] 查询命令支持 `fields` / `compact`
 - [ ] 列表命令支持分页或明确说明无需分页
+- [ ] README / Skill / reference / help / context / doctor / changelog / update 中声明的公开行为达到 100% 功能契约覆盖率
 - [ ] 所有时间为 ISO 8601 UTC
 - [ ] 所有 ID 为字符串
 - [ ] 敏感信息全链路脱敏
