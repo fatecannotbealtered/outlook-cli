@@ -23,10 +23,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed the rules `--permanent-delete` authoring option so CLI-created rules honor the soft-delete-only policy.
 - Removed pre-1.1 `--preview` / `--send` compatibility flags; write commands now use only `--dry-run -> --confirm`.
 - Made `mail read` non-mutating; use `mail mark --status read` for read-state changes.
+- Self-update now syncs the whole Agent Skill directory through `npx skills add fatecannotbealtered/outlook-cli -y -g` and reports `skill_sync_status`.
+- Skill, README, `.agent/` specs, and test prompts now follow the unified Agent-first update and Skill sync contract.
 
 ### Security
 
 - Documented the tool as a T1 AI-native CLI and aligned mailbox content handling with the untrusted-content convention.
+- Release checksums are signed with Sigstore/Cosign, and install/update paths report signature verification status separately from checksum verification.
 - Made npm postinstall checksum verification hard-fail when checksums are missing or invalid.
 
 ## [1.1.0] - 2026-06-07

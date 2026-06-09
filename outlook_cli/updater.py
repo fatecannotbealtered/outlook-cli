@@ -16,6 +16,7 @@ from . import __version__
 
 NPM_PACKAGE = "@fatecannotbealtered-/outlook-cli"
 PYPI_PACKAGE = "outlook-cli"
+SKILL_REPO = "fatecannotbealtered/outlook-cli"
 NPM_LATEST_URL = "https://registry.npmjs.org/@fatecannotbealtered-%2Foutlook-cli/latest"
 PYPI_URL = "https://pypi.org/pypi/outlook-cli/json"
 
@@ -64,6 +65,20 @@ def update_command(manager: str, target_version: str = "latest") -> list[str]:
     return []
 
 
+def skill_sync_command() -> list[str]:
+    """Build the command that syncs the whole Agent Skill directory."""
+    return ["npx", "skills", "add", SKILL_REPO, "-y", "-g"]
+
+
+def signature_status(manager: str) -> str:
+    """Describe where release integrity verification happens for this update path."""
+    if manager == "npm":
+        return "handled_by_npm_installer"
+    if manager == "pip":
+        return "handled_by_package_manager"
+    return "manual_release_verification_required"
+
+
 def _read_json_url(url: str, timeout: float = 5.0) -> dict[str, Any]:
     req = urllib.request.Request(url, headers={"User-Agent": f"outlook-cli/{__version__}"})
     with urllib.request.urlopen(req, timeout=timeout) as resp:
@@ -97,6 +112,9 @@ def check_update(manager: str) -> dict[str, Any]:
         "install_method": manager,
         "supported": manager in {"npm", "pip"},
         "command": command,
+        "signature_status": signature_status(manager),
+        "skill_sync_command": skill_sync_command(),
+        "skill_sync_status": "not_run",
         "error": err or "",
     }
 
@@ -104,6 +122,7 @@ def check_update(manager: str) -> dict[str, Any]:
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     """Build a deterministic dry-run plan without touching the network."""
     command = update_command(manager, target_version)
+    skill_command = skill_sync_command()
     supported = bool(command)
     return {
         "current_version": __version__,
@@ -111,6 +130,9 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
         "install_method": manager,
         "supported": supported,
         "command": command,
+        "signature_status": signature_status(manager),
+        "skill_sync_command": skill_command,
+        "skill_sync_status": "not_run",
         "changes": [
             {
                 "action": "update",
@@ -119,7 +141,13 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
                     "target_version": target_version,
                     "command": command,
                 },
-            }
+            },
+            {
+                "action": "sync_skill",
+                "detail": {
+                    "command": skill_command,
+                },
+            },
         ],
         "manual_url": "https://github.com/fatecannotbealtered/outlook-cli/releases",
     }
@@ -168,12 +196,41 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
             },
         )
 
+    skill_command = skill_sync_command()
+    skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
+    if not quiet:
+        if skill_result.stdout:
+            print(
+                skill_result.stdout,
+                file=sys.stderr,
+                end="" if skill_result.stdout.endswith("\n") else "\n",
+            )
+        if skill_result.stderr:
+            print(
+                skill_result.stderr,
+                file=sys.stderr,
+                end="" if skill_result.stderr.endswith("\n") else "\n",
+            )
+    if skill_result.returncode != 0:
+        raise UpdateFailed(
+            "Skill sync command failed",
+            {
+                "command": skill_command,
+                "returncode": skill_result.returncode,
+                "stdout": skill_result.stdout[-4000:],
+                "stderr": skill_result.stderr[-4000:],
+            },
+        )
+
     return {
         "previous_version": __version__,
         "current_version": resolved_version,
         "target_version": target_version,
         "install_method": manager,
         "command": command,
+        "signature_status": signature_status(manager),
+        "skill_sync_command": skill_command,
+        "skill_sync_status": "synced",
         "updated": True,
         "next_step": f'run "outlook-cli changelog --since {__version__}" to see what changed',
     }
