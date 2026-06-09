@@ -98,9 +98,7 @@ def mail_list(ctx, filter_type, folder, days, start, end, limit, offset):
         start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         qs = qs.filter(datetime_received__gt=start_dt)
     if end:
-        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        ) + timedelta(days=1)
+        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
         qs = qs.filter(datetime_received__lt=end_dt)
 
     qs = qs.order_by("-datetime_received")
@@ -127,9 +125,7 @@ def mail_list(ctx, filter_type, folder, days, start, end, limit, offset):
         for e in emails:
             read_mark = " " if e["is_read"] else "*"
             short_id = e["id"][:12] + "..." if len(e["id"]) > 12 else e["id"]
-            output.info(
-                f"[{read_mark}] {short_id}  {e['date']}  {e['sender']}  {e['subject']}"
-            )
+            output.info(f"[{read_mark}] {short_id}  {e['date']}  {e['sender']}  {e['subject']}")
         output.info(f"--- {len(emails)} / {total} total ---")
 
 
@@ -207,9 +203,7 @@ def mail_search(
         start_dt = datetime.strptime(start, "%Y-%m-%d").replace(tzinfo=timezone.utc)
         qs = qs.filter(datetime_received__gt=start_dt)
     if end:
-        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        ) + timedelta(days=1)
+        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
         qs = qs.filter(datetime_received__lt=end_dt)
     if to_addr:
         qs = qs.filter(to_recipients__contains=to_addr)
@@ -228,10 +222,8 @@ def mail_search(
         filtered = [
             m
             for m in all_items
-            if _s
-            in (getattr(getattr(m, "sender", None), "email_address", "") or "").lower()
-            or _s
-            in (getattr(getattr(m, "author", None), "email_address", "") or "").lower()
+            if _s in (getattr(getattr(m, "sender", None), "email_address", "") or "").lower()
+            or _s in (getattr(getattr(m, "author", None), "email_address", "") or "").lower()
         ]
         total = len(filtered)
         page = filtered[offset : offset + limit]
@@ -258,9 +250,7 @@ def mail_search(
         for e in emails:
             read_mark = " " if e["is_read"] else "*"
             short_id = e["id"][:12] + "..." if len(e["id"]) > 12 else e["id"]
-            output.info(
-                f"[{read_mark}] {short_id}  {e['date']}  {e['sender']}  {e['subject']}"
-            )
+            output.info(f"[{read_mark}] {short_id}  {e['date']}  {e['sender']}  {e['subject']}")
         output.info(f"--- {len(emails)} / {total} results ---")
 
 
@@ -350,9 +340,7 @@ def mail_stats(ctx, folder, days, start, end, top):
         start_dt = datetime.now(timezone.utc) - timedelta(days=days)
 
     if end:
-        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(
-            tzinfo=timezone.utc
-        ) + timedelta(days=1)
+        end_dt = datetime.strptime(end, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
     else:
         end_dt = datetime.now(timezone.utc)
 
@@ -449,9 +437,7 @@ def mail_thread(ctx, mail_id, days):
 @mail_group.command("attachment-summary")
 @click.option("--folder", default=None)
 @click.option("--days", default=7)
-@click.option(
-    "--ext", default=None, help="Filter by extensions (comma-sep, e.g. pdf,xlsx)"
-)
+@click.option("--ext", default=None, help="Filter by extensions (comma-sep, e.g. pdf,xlsx)")
 @click.option("--limit", default=50)
 @click.option("--offset", default=0)
 @click.pass_context
@@ -680,9 +666,7 @@ def mail_move(ctx, mail_id, folder):
 
 @mail_group.command("mark")
 @click.option("--id", "mail_id", required=True)
-@click.option(
-    "--status", "mark_status", type=click.Choice(["read", "unread"]), required=True
-)
+@click.option("--status", "mark_status", type=click.Choice(["read", "unread"]), required=True)
 @click.pass_context
 def mail_mark(ctx, mail_id, mark_status):
     """Mark email as read or unread."""
@@ -1080,7 +1064,7 @@ def mail_send(ctx, to_addr, cc, subject, body, html, attachments, save_draft):
         resource_id="new-draft" if save_draft else "new-message",
     )
 
-    from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
+    from exchangelib import FileAttachment, HTMLBody, Mailbox, Message
 
     account = get_account()
     msg_body = HTMLBody(body) if html else body
@@ -1157,7 +1141,7 @@ def mail_reply(ctx, mail_id, body, html, attachments):
     _confirm_item("mail reply", item)
 
     if attachments:
-        from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
+        from exchangelib import FileAttachment, HTMLBody, Mailbox, Message
 
         msg_body = HTMLBody(body) if html else body
         msg = Message(
@@ -1170,15 +1154,11 @@ def mail_reply(ctx, mail_id, body, html, attachments):
         for att_path in attachments:
             with open(att_path, "rb") as f:
                 content = f.read()
-            msg.attachments.append(
-                FileAttachment(name=os.path.basename(att_path), content=content)
-            )
+            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
         msg.send()
     else:
         reply_subject = (
-            f"Re: {item.subject}"
-            if not item.subject.startswith("Re:")
-            else item.subject
+            f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
         )
         if html:
             from exchangelib import HTMLBody
@@ -1233,7 +1213,7 @@ def mail_reply_all(ctx, mail_id, body, html, attachments):
     _confirm_item("mail reply-all", item)
 
     if attachments:
-        from exchangelib import Message, Mailbox, FileAttachment, HTMLBody
+        from exchangelib import FileAttachment, HTMLBody, Mailbox, Message
 
         msg_body = HTMLBody(body) if html else body
         all_recipients = []
@@ -1253,15 +1233,11 @@ def mail_reply_all(ctx, mail_id, body, html, attachments):
         for att_path in attachments:
             with open(att_path, "rb") as f:
                 content = f.read()
-            msg.attachments.append(
-                FileAttachment(name=os.path.basename(att_path), content=content)
-            )
+            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
         msg.send()
     else:
         reply_subject = (
-            f"Re: {item.subject}"
-            if not item.subject.startswith("Re:")
-            else item.subject
+            f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
         )
         if html:
             from exchangelib import HTMLBody
@@ -1315,7 +1291,7 @@ def mail_forward(ctx, mail_id, to_addr, body, html, attachments):
 
     _confirm_item("mail forward", item)
 
-    from exchangelib import Mailbox, FileAttachment, HTMLBody
+    from exchangelib import FileAttachment, HTMLBody, Mailbox
 
     fwd_body = HTMLBody(body) if html else body
     fwd_subject = f"Fwd: {item.subject}"
@@ -1325,7 +1301,14 @@ def mail_forward(ctx, mail_id, to_addr, body, html, attachments):
         from exchangelib import Message
 
         original_body = item.text_body or ""
-        combined = f"{body}\n\n---------- Forwarded message ----------\nFrom: {item.sender.email_address if item.sender else ''}\nSubject: {item.subject}\n\n{original_body}"
+        sender = item.sender.email_address if item.sender else ""
+        combined = (
+            f"{body}\n\n"
+            "---------- Forwarded message ----------\n"
+            f"From: {sender}\n"
+            f"Subject: {item.subject}\n\n"
+            f"{original_body}"
+        )
         msg_body = HTMLBody(combined) if html else combined
         msg = Message(
             account=account,
@@ -1336,9 +1319,7 @@ def mail_forward(ctx, mail_id, to_addr, body, html, attachments):
         for att_path in attachments:
             with open(att_path, "rb") as f:
                 content = f.read()
-            msg.attachments.append(
-                FileAttachment(name=os.path.basename(att_path), content=content)
-            )
+            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
         for orig_att in item.attachments or []:
             msg.attachments.append(orig_att)
         msg.send()
@@ -1468,9 +1449,7 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
         item.body = body
         updated.append("body")
     if to_addr is not None:
-        item.to_recipients = [
-            Mailbox(email_address=a.strip()) for a in to_addr.split(",")
-        ]
+        item.to_recipients = [Mailbox(email_address=a.strip()) for a in to_addr.split(",")]
         updated.append("to")
     if cc is not None:
         item.cc_recipients = [Mailbox(email_address=a.strip()) for a in cc.split(",")]

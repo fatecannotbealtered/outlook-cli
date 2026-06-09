@@ -1,12 +1,16 @@
 """setup.py for outlook-cli (development / pip install)."""
 
-from setuptools import setup, find_packages
+import os
+
+from setuptools import find_packages, setup
 
 setup(
     name="outlook-cli",
     version="1.1.0",
-    description="Outlook Exchange CLI for humans and AI Agents",
-    long_description=open("README.md", encoding="utf-8").read() if __import__("os").path.exists("README.md") else "",
+    description="Outlook Exchange CLI for AI Agents",
+    long_description=open("README.md", encoding="utf-8").read()
+    if os.path.exists("README.md")
+    else "",
     long_description_content_type="text/markdown",
     author="Sean Guo",
     author_email="guosong6886@gmail.com",

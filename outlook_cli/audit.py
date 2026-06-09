@@ -54,10 +54,7 @@ def log(
     _maybe_cleanup(d)
 
     entry = {
-        "ts": datetime.now(timezone.utc)
-        .replace(microsecond=0)
-        .isoformat()
-        .replace("+00:00", "Z"),
+        "ts": datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z"),
         "cmd": cmd_path,
         "args": _sanitize_args(args),
         "account": account,

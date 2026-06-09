@@ -25,7 +25,7 @@ class TestEncryptDecrypt:
         assert e1 != e2
 
     def test_encrypt_is_deterministic_on_same_machine(self):
-        """Same plaintext on same machine should decrypt correctly (not necessarily same ciphertext)."""
+        """Same plaintext on same machine should decrypt correctly."""
         val = "test-password"
         e1 = crypto.encrypt(val)
         e2 = crypto.encrypt(val)
@@ -99,27 +99,23 @@ class TestConfigIntegration:
     def test_save_encrypts_password(self, tmp_path, monkeypatch):
         """Config save should encrypt the password field."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr(
-            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
-        )
+        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
 
         from outlook_cli.config import save
 
         save({"email": "test@test.com", "password": "secret123", "server": ""})
 
         # Read raw file — password should be encrypted
-        with open(tmp_path / "config.json", "r") as f:
+        with open(tmp_path / "config.json") as f:
             raw = json.load(f)
         assert raw["password"].startswith(crypto.ENCRYPTED_PREFIX)
 
     def test_load_decrypts_password(self, tmp_path, monkeypatch):
         """Config load should decrypt the password field."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr(
-            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
-        )
+        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
 
-        from outlook_cli.config import save, load
+        from outlook_cli.config import load, save
 
         save({"email": "test@test.com", "password": "secret123", "server": ""})
 
@@ -129,9 +125,7 @@ class TestConfigIntegration:
     def test_load_handles_plaintext_legacy(self, tmp_path, monkeypatch):
         """Config load should handle old plaintext passwords (backward compat)."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr(
-            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
-        )
+        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
 
         # Write a legacy plaintext config
         config_file = tmp_path / "config.json"
@@ -146,11 +140,9 @@ class TestConfigIntegration:
     def test_env_password_not_double_encrypted(self, tmp_path, monkeypatch):
         """Password from env var should not be encrypted on next save cycle."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
-        monkeypatch.setattr(
-            "outlook_cli.config.config_path", lambda: tmp_path / "config.json"
-        )
+        monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
 
-        from outlook_cli.config import save, load
+        from outlook_cli.config import load, save
 
         # First save with encrypted password
         save({"email": "test@test.com", "password": "secret123"})
@@ -165,6 +157,6 @@ class TestConfigIntegration:
         assert cfg2["password"] == "secret123"
 
         # Raw file should still be encrypted
-        with open(tmp_path / "config.json", "r") as f:
+        with open(tmp_path / "config.json") as f:
             raw = json.load(f)
         assert raw["password"].startswith(crypto.ENCRYPTED_PREFIX)

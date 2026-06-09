@@ -125,9 +125,7 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
     end = localize_dt(end_dt, tz)
 
     try:
-        events = [
-            _event_to_dict(item) for item in account.calendar.view(start=start, end=end)
-        ]
+        events = [_event_to_dict(item) for item in account.calendar.view(start=start, end=end)]
     except Exception as e:
         output.handle_error(f"Calendar query failed: {e}", "SERVER_ERROR", exit_code=7)
 
@@ -173,13 +171,9 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
     default=None,
     help="Recurrence pattern",
 )
-@click.option(
-    "--recurrence-interval", default=1, type=int, help="Recurrence interval (default 1)"
-)
+@click.option("--recurrence-interval", default=1, type=int, help="Recurrence interval (default 1)")
 @click.option("--recurrence-end", default=None, help="Recurrence end date YYYY-MM-DD")
-@click.option(
-    "--recurrence-count", default=None, type=int, help="Number of occurrences"
-)
+@click.option("--recurrence-count", default=None, type=int, help="Number of occurrences")
 @click.pass_context
 def cal_create(
     ctx,
@@ -199,7 +193,7 @@ def cal_create(
 
     check_permission("cal create")
 
-    from exchangelib import CalendarItem, Mailbox, Attendee
+    from exchangelib import Attendee, CalendarItem, Mailbox
 
     account = get_account()
     tz = get_tz()
@@ -208,9 +202,7 @@ def cal_create(
     end_dt = _parse_dt(end, "end time")
 
     if end_dt <= start_dt:
-        output.handle_error(
-            "End time must be after start time", "VALIDATION_ERROR", exit_code=2
-        )
+        output.handle_error("End time must be after start time", "VALIDATION_ERROR", exit_code=2)
 
     start_local = localize_dt(start_dt, tz)
     end_local = localize_dt(end_dt, tz)
@@ -226,13 +218,13 @@ def cal_create(
     recurrence_obj = None
     if recurrence:
         from exchangelib.recurrence import (
-            Recurrence,
             DailyPattern,
-            WeeklyPattern,
+            EndDatePattern,
             MonthlyPattern,
             NoEndDatePattern,
-            EndDatePattern,
             NumberedPattern,
+            Recurrence,
+            WeeklyPattern,
         )
 
         pattern_map = {
@@ -284,9 +276,7 @@ def cal_create(
         recurrence=recurrence_obj,
     )
     event.save(
-        send_meeting_invitations="SendToAllAndSaveCopy"
-        if attendee_list
-        else "SendToNone",
+        send_meeting_invitations="SendToAllAndSaveCopy" if attendee_list else "SendToNone",
     )
 
     data = {
@@ -305,15 +295,11 @@ def cal_create(
 
 @cal_group.command("update")
 @click.option("--id", "event_id", required=True, help="Event ID from cal list")
-@click.option(
-    "--changekey", default="", help="Changekey (from cal list, improves lookup)"
-)
+@click.option("--changekey", default="", help="Changekey (from cal list, improves lookup)")
 @click.option("--subject", default=None)
 @click.option("--start", default=None, help="Start time YYYY-MM-DD HH:MM")
 @click.option("--end", default=None, help="End time YYYY-MM-DD HH:MM")
-@click.option(
-    "--attendees", default=None, help="Comma-separated emails (replaces existing)"
-)
+@click.option("--attendees", default=None, help="Comma-separated emails (replaces existing)")
 @click.option("--location", default=None)
 @click.option("--body", default=None)
 @click.pass_context
@@ -333,7 +319,7 @@ def cal_update(
 
     check_permission("cal update")
 
-    from exchangelib import Mailbox, Attendee
+    from exchangelib import Attendee, Mailbox
 
     account = get_account()
     tz = get_tz()
@@ -398,9 +384,7 @@ def cal_update(
     try:
         item.save(
             update_fields=update_fields,
-            send_meeting_invitations="SendToAllAndSaveCopy"
-            if has_attendees
-            else "SendToNone",
+            send_meeting_invitations="SendToAllAndSaveCopy" if has_attendees else "SendToNone",
         )
     except Exception as e:
         output.handle_api_error(e)
@@ -463,9 +447,7 @@ def cal_delete(ctx, event_id, changekey, force):
 
     subject = item.subject
     item.delete(
-        send_meeting_cancellations="SendToAllAndSaveCopy"
-        if has_attendees
-        else "SendToNone"
+        send_meeting_cancellations="SendToAllAndSaveCopy" if has_attendees else "SendToNone"
     )
 
     data = {"message": "Event deleted", "subject": subject}

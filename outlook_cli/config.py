@@ -92,7 +92,7 @@ def load() -> dict:
     path = config_path()
     if path.exists():
         try:
-            with open(path, "r", encoding="utf-8") as f:
+            with open(path, encoding="utf-8") as f:
                 cfg = json.load(f)
         except json.JSONDecodeError as e:
             print(

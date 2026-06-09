@@ -19,7 +19,6 @@ from datetime import datetime, timedelta
 
 import pytest
 
-
 pytestmark = pytest.mark.skipif(
     not os.environ.get("OUTLOOK_IT_EMAIL") or not os.environ.get("OUTLOOK_IT_PASSWORD"),
     reason="Integration tests require OUTLOOK_IT_EMAIL and OUTLOOK_IT_PASSWORD",
@@ -296,9 +295,7 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        code, _, _ = run_cli(
-            "mail", "export", "--id", mid, "--output-dir", str(tmp_path)
-        )
+        code, _, _ = run_cli("mail", "export", "--id", mid, "--output-dir", str(tmp_path))
         assert code == 0
         # Verify file was created
         files = list(tmp_path.glob("*"))
@@ -321,9 +318,7 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        data = get_json(
-            "mail", "reply", "--id", mid, "--body", "Reply test.", "--dry-run"
-        )
+        data = get_json("mail", "reply", "--id", mid, "--body", "Reply test.", "--dry-run")
         assert data["confirm_token"].startswith("ct_")
 
     def test_16_reply_all_dry_run(self):
@@ -331,9 +326,7 @@ class TestStep2MailRoundTrip:
         mid = self.__class__._mid
         if not mid:
             pytest.skip("send/search failed")
-        data = get_json(
-            "mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--dry-run"
-        )
+        data = get_json("mail", "reply-all", "--id", mid, "--body", "Reply all test.", "--dry-run")
         assert data["confirm_token"].startswith("ct_")
 
     def test_17_forward_dry_run(self):
@@ -506,9 +499,7 @@ class TestStep2bSendVariants:
         time.sleep(3)
         data = get_json("mail", "thread", "--id", mid)
         thread_msgs = data.get("thread", data.get("messages", []))
-        assert len(thread_msgs) >= 2, (
-            f"Expected >=2 messages in thread, got {len(thread_msgs)}"
-        )
+        assert len(thread_msgs) >= 2, f"Expected >=2 messages in thread, got {len(thread_msgs)}"
 
     # --- Reply-all send ---
 
@@ -517,9 +508,7 @@ class TestStep2bSendVariants:
         mid = self.__class__._created_ids[0] if self.__class__._created_ids else None
         if not mid:
             pytest.skip("no email to reply-all to")
-        data = get_json(
-            "mail", "reply-all", "--id", mid, "--body", "This is a reply-all."
-        )
+        data = get_json("mail", "reply-all", "--id", mid, "--body", "This is a reply-all.")
         assert data["sent"] is True
 
     # --- Forward send ---
@@ -547,14 +536,8 @@ class TestStep2bSendVariants:
         email = os.environ["OUTLOOK_IT_EMAIL"]
         for _ in range(6):
             time.sleep(5)
-            data = get_json(
-                "mail", "search", "--subject", "FW:", "--sender", email, "--limit", "5"
-            )
-            fwd = [
-                e
-                for e in data.get("emails", [])
-                if f"{RUN_ID} html" in e.get("subject", "")
-            ]
+            data = get_json("mail", "search", "--subject", "FW:", "--sender", email, "--limit", "5")
+            fwd = [e for e in data.get("emails", []) if f"{RUN_ID} html" in e.get("subject", "")]
             if fwd:
                 self.__class__._created_ids.append(fwd[0]["id"])
                 break
@@ -596,9 +579,7 @@ class TestStep2bSendVariants:
         )
         for e in data.get("emails", []):
             run_cli("mail", "delete", "--id", e["id"], "--force")
-        data = get_json(
-            "mail", "search", "--subject", "FW:", "--sender", email, "--limit", "10"
-        )
+        data = get_json("mail", "search", "--subject", "FW:", "--sender", email, "--limit", "10")
         for e in data.get("emails", []):
             if f"{RUN_ID}" in e.get("subject", ""):
                 run_cli("mail", "delete", "--id", e["id"], "--force")
@@ -634,9 +615,7 @@ class TestStep3DraftRoundTrip:
         """[mail drafts]"""
         time.sleep(2)
         data = get_json("mail", "drafts", "--limit", "20")
-        drafts = [
-            d for d in data.get("drafts", []) if self.SUBJECT in d.get("subject", "")
-        ]
+        drafts = [d for d in data.get("drafts", []) if self.SUBJECT in d.get("subject", "")]
         assert len(drafts) >= 1, f"Draft '{self.SUBJECT}' not found"
         self.__class__._draft_id = drafts[0]["id"]
 
@@ -710,9 +689,7 @@ class TestStep4CalendarRoundTrip:
             "--body",
             f"Auto {RUN_ID}",
         )
-        assert (
-            "created" in data["message"].lower() or "Event created" in data["message"]
-        )
+        assert "created" in data["message"].lower() or "Event created" in data["message"]
 
     def test_02_list(self):
         """[cal list]"""
@@ -726,9 +703,7 @@ class TestStep4CalendarRoundTrip:
         eid = self.__class__._event_id
         if not eid:
             pytest.skip("event not created")
-        code, _, stderr = run_cli(
-            "cal", "update", "--id", eid, "--location", "Updated Room"
-        )
+        code, _, stderr = run_cli("cal", "update", "--id", eid, "--location", "Updated Room")
         assert code == 0, f"Exit {code}: {stderr}"
 
     def test_04_delete(self):
@@ -772,9 +747,7 @@ class TestStep4bCalendarVariants:
             "--body",
             f"Attendees test {RUN_ID}",
         )
-        assert (
-            "created" in data["message"].lower() or "Event created" in data["message"]
-        )
+        assert "created" in data["message"].lower() or "Event created" in data["message"]
 
     def test_02_list_verify_attendees(self):
         """[cal list] Verify attendees field in event."""
@@ -836,9 +809,7 @@ class TestStep5FolderRoundTrip:
         # Create target parent
         code, _, _ = run_cli("folders", "create", "--name", self.FOLDER_C)
         assert code == 0
-        code, _, _ = run_cli(
-            "folders", "move", "--name", self.FOLDER_B, "--target", self.FOLDER_C
-        )
+        code, _, _ = run_cli("folders", "move", "--name", self.FOLDER_B, "--target", self.FOLDER_C)
         assert code == 0
 
     def test_05_empty(self):
@@ -851,9 +822,7 @@ class TestStep5FolderRoundTrip:
     def test_06_delete(self):
         """[folders delete] Clean up all test folders."""
         # Delete nested folder first, then parent
-        run_cli(
-            "folders", "delete", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force"
-        )
+        run_cli("folders", "delete", "--name", f"{self.FOLDER_C}/{self.FOLDER_B}", "--force")
         run_cli("folders", "delete", "--name", self.FOLDER_C, "--force")
 
 
@@ -892,9 +861,7 @@ class TestStep6RulesRoundTrip:
         rid = self.__class__._rule_id
         if not rid:
             pytest.skip("rule not created")
-        code, _, _ = run_cli(
-            "rules", "update", "--id", rid, "--name", f"{self.RULE_NAME}-updated"
-        )
+        code, _, _ = run_cli("rules", "update", "--id", rid, "--name", f"{self.RULE_NAME}-updated")
         assert code == 0
 
     def test_04_toggle(self):
@@ -932,9 +899,7 @@ class TestStep7Tools:
         """[tools contacts --query] Search by name keyword."""
         # Extract name part from email (before @) as search query
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        query = email.split("@")[0].split(".")[
-            0
-        ]  # e.g. "song" from "jane.doe@example.com"
+        query = email.split("@")[0].split(".")[0]  # e.g. "song" from "jane.doe@example.com"
         code, stdout, stderr = run_cli("tools", "contacts", "--query", query)
         # Should succeed (may return 0 or more results)
         assert code == 0, f"Exit {code}: {stderr}"
@@ -996,9 +961,7 @@ class TestStep7Tools:
     def test_06_oof_set_and_disable(self):
         """[tools oof set] + [tools oof disable] Set then restore."""
         # Set OOF
-        code, _, _ = run_cli(
-            "tools", "oof", "set", "--message", f"Integration test {RUN_ID}"
-        )
+        code, _, _ = run_cli("tools", "oof", "set", "--message", f"Integration test {RUN_ID}")
         assert code == 0
         # Disable to restore original state
         code, _, _ = run_cli("tools", "oof", "disable")

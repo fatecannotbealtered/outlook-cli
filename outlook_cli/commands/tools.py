@@ -30,9 +30,7 @@ def tools_contacts(ctx, query, email_exact, limit):
     check_permission("tools contacts")
 
     if not query and not email_exact:
-        output.handle_error(
-            "Provide --query or --email", "VALIDATION_ERROR", exit_code=2
-        )
+        output.handle_error("Provide --query or --email", "VALIDATION_ERROR", exit_code=2)
 
     if query and len(query) < 2:
         output.handle_error(
@@ -89,16 +87,10 @@ def tools_contacts(ctx, query, email_exact, limit):
 
 
 @tools_group.command("free-busy")
-@click.option(
-    "--email", "emails_str", required=True, help="Email addresses (comma-sep)"
-)
+@click.option("--email", "emails_str", required=True, help="Email addresses (comma-sep)")
 @click.option("--start", required=True, help="Start date YYYY-MM-DD")
-@click.option(
-    "--end", default=None, help="End date YYYY-MM-DD (default: same as start)"
-)
-@click.option(
-    "--slot", type=int, default=30, help="Slot granularity in minutes (default 30)"
-)
+@click.option("--end", default=None, help="End date YYYY-MM-DD (default: same as start)")
+@click.option("--slot", type=int, default=30, help="Slot granularity in minutes (default 30)")
 @click.pass_context
 def tools_free_busy(ctx, emails_str, start, end, slot):
     """Query free/busy status and suggest available time slots."""
@@ -139,7 +131,7 @@ def tools_free_busy(ctx, emails_str, start, end, slot):
     output_data = []
     all_busy = []
 
-    for email, view in zip(emails, results):
+    for email, view in zip(emails, results, strict=False):
         busy_slots = []
         if hasattr(view, "calendar_event_array") and view.calendar_event_array:
             for event in view.calendar_event_array:
@@ -263,9 +255,7 @@ def tools_rooms(ctx, keyword, limit):
                 }
             ]
         except Exception as e:
-            output.handle_error(
-                f"Failed to get rooms: {e}", "SERVER_ERROR", exit_code=7
-            )
+            output.handle_error(f"Failed to get rooms: {e}", "SERVER_ERROR", exit_code=7)
 
         data = {"count": len(rooms), "room_lists": result}
         if output.is_json():
@@ -356,9 +346,7 @@ def tools_rooms_free_busy(ctx, start, end, list_name, emails, limit):
                 except Exception:
                     pass
         except Exception as e:
-            output.handle_error(
-                f"Failed to get room lists: {e}", "SERVER_ERROR", exit_code=7
-            )
+            output.handle_error(f"Failed to get room lists: {e}", "SERVER_ERROR", exit_code=7)
 
     if not room_emails:
         output.handle_error(
@@ -381,13 +369,11 @@ def tools_rooms_free_busy(ctx, start, end, list_name, emails, limit):
             end=end_local,
         )
     except Exception as e:
-        output.handle_error(
-            f"Room free/busy query failed: {e}", "SERVER_ERROR", exit_code=7
-        )
+        output.handle_error(f"Room free/busy query failed: {e}", "SERVER_ERROR", exit_code=7)
 
     available = []
     busy = []
-    for email, view in zip(room_emails, results):
+    for email, view in zip(room_emails, results, strict=False):
         has_conflict = False
         if hasattr(view, "calendar_event_array") and view.calendar_event_array:
             for event in view.calendar_event_array:
@@ -448,9 +434,7 @@ def tools_oof_get(ctx):
     try:
         oof = account.oof_settings
     except Exception as e:
-        output.handle_error(
-            f"Failed to get OOF settings: {e}", "SERVER_ERROR", exit_code=7
-        )
+        output.handle_error(f"Failed to get OOF settings: {e}", "SERVER_ERROR", exit_code=7)
 
     def _reply_text(reply):
         if not reply:
@@ -499,9 +483,7 @@ def tools_oof_set(ctx, message, external_message, start, end):
     tz = get_tz()
 
     state = "Scheduled" if (start and end) else "Enabled"
-    start_local = (
-        localize_dt(parse_datetime(start, "start time"), tz) if start else None
-    )
+    start_local = localize_dt(parse_datetime(start, "start time"), tz) if start else None
     end_local = localize_dt(parse_datetime(end, "end time"), tz) if end else None
 
     if ctx.obj.get("dry_run"):
@@ -582,9 +564,7 @@ def tools_oof_disable(ctx):
 @tools_group.command("respond")
 @click.option("--id", "event_id", default=None, help="Event ID from cal list")
 @click.option("--changekey", default="", help="Changekey (improves lookup)")
-@click.option(
-    "--mail-id", default=None, help="Respond from a meeting invitation mail ID"
-)
+@click.option("--mail-id", default=None, help="Respond from a meeting invitation mail ID")
 @click.option(
     "--action",
     "response_action",
@@ -687,14 +667,10 @@ def tools_respond(ctx, event_id, changekey, mail_id, response_action, message):
                         target = item
                         break
         except Exception as e:
-            output.handle_error(
-                f"Failed to find event: {e}", "SERVER_ERROR", exit_code=7
-            )
+            output.handle_error(f"Failed to find event: {e}", "SERVER_ERROR", exit_code=7)
 
         if not target:
-            output.handle_error(
-                f"Event not found: {event_id}", "NOT_FOUND", exit_code=4
-            )
+            output.handle_error(f"Event not found: {event_id}", "NOT_FOUND", exit_code=4)
 
     if ctx.obj.get("dry_run"):
         action_labels = {

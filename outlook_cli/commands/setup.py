@@ -14,17 +14,13 @@ def setup_group():
 
 @setup_group.command("login")
 @click.option("--email", default=None, help="Exchange email (required)")
-@click.option(
-    "--password", default=None, help="Password (required; avoid shell history)"
-)
+@click.option("--password", default=None, help="Password (required; avoid shell history)")
 @click.option(
     "--server",
     default="",
     help="Exchange server URL (optional, auto-discover if empty)",
 )
-@click.option(
-    "--timezone", default="Asia/Shanghai", help="Timezone (default: Asia/Shanghai)"
-)
+@click.option("--timezone", default="Asia/Shanghai", help="Timezone (default: Asia/Shanghai)")
 @click.option("--skip-test", is_flag=True, help="Skip connection test")
 @click.pass_context
 def setup_login(ctx, email, password, server, timezone, skip_test):
@@ -35,6 +31,7 @@ def setup_login(ctx, email, password, server, timezone, skip_test):
         outlook-cli setup login --email user@co.com --password P@ss --confirm <token>
     """
     import os
+
     from ..confirmation import command_preview_payload, validate_token
 
     if email is None:
@@ -157,8 +154,7 @@ def setup_doctor():
             exit_code=3,
         )
 
-    from ..exchange import get_account
-    from ..exchange import reset_connection
+    from ..exchange import get_account, reset_connection
 
     reset_connection()
 
@@ -176,8 +172,6 @@ def setup_doctor():
             output.print_json(data)
         else:
             output.success(f"Connected: {data['email']}")
-            output.info(
-                f"Inbox: {data['inbox_total']} total, {data['inbox_unread']} unread"
-            )
+            output.info(f"Inbox: {data['inbox_total']} total, {data['inbox_unread']} unread")
     except Exception as e:
         output.handle_api_error(e)

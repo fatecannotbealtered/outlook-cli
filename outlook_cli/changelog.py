@@ -9,9 +9,7 @@ from typing import Any
 
 from . import __version__
 
-_HEADING_RE = re.compile(
-    r"^## \[(?P<version>[^\]]+)\](?: - (?P<date>\d{4}-\d{2}-\d{2}))?\s*$"
-)
+_HEADING_RE = re.compile(r"^## \[(?P<version>[^\]]+)\](?: - (?P<date>\d{4}-\d{2}-\d{2}))?\s*$")
 _CATEGORY_RE = re.compile(r"^### (?P<category>[A-Za-z ]+)\s*$")
 _BULLET_RE = re.compile(r"^- (?P<text>.*)$")
 _CATEGORIES = {
@@ -103,8 +101,7 @@ def entries_since(since: str | None = None) -> list[dict[str, Any]]:
     return [
         entry
         for entry in entries
-        if entry["version"].lower() == "unreleased"
-        or _version_key(entry["version"]) > baseline
+        if entry["version"].lower() == "unreleased" or _version_key(entry["version"]) > baseline
     ]
 
 

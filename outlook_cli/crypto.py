@@ -54,10 +54,10 @@ def _machine_id() -> bytes:
     if os.name == "posix":
         for path in ["/etc/machine-id", "/var/lib/dbus/machine-id"]:
             try:
-                with open(path, "r") as f:
+                with open(path) as f:
                     parts.append(f.read().strip())
                 break
-            except (OSError, IOError):
+            except OSError:
                 pass
 
     # On macOS: try IOPlatformUUID via ioreg

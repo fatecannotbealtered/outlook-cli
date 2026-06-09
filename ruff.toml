@@ -1,0 +1,20 @@
+# Committed ruff config for the Python flavour of outlook-cli.
+#
+# REPO-SPEC §6 requires the formatter config to live in the repo (not only in CI
+# defaults) so local `ruff check` / `ruff format` match what CI enforces.
+# ruff is used for both linting and formatting; no separate black/isort needed.
+
+line-length = 100
+target-version = "py310"
+
+[lint]
+# E/F: pycodestyle + pyflakes (core correctness + style)
+# I:   import sorting (isort)
+# UP:  pyupgrade — keep syntax modern for the target version
+# B:   flake8-bugbear — catch likely bugs and footguns
+select = ["E", "F", "I", "UP", "B"]
+
+[format]
+# Defaults: double quotes, space indentation, auto line endings.
+quote-style = "double"
+indent-style = "space"
