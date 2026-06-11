@@ -15,6 +15,24 @@ from . import __version__, output
 from .audit import log as audit_log
 
 SKILL_MIN_VERSION = "1.1.0"
+RELEASE_READINESS = {
+    "level": "beta",
+    "fcc_required": True,
+    "fcc_status": "verified",
+    "mock_upstream_required": True,
+    "mock_upstream_status": "verified",
+    "live_smoke_required_for_stable": True,
+    "live_smoke_status": "missing",
+    "reason": (
+        "FCC and mock upstream/contract tests are required; recorded live smoke/E2E "
+        "evidence is missing, so this release is beta."
+    ),
+    "required_evidence": [
+        "functional_contract_coverage_100",
+        "mock_upstream_contract_tests",
+        "recorded_live_smoke_for_stable",
+    ],
+}
 
 # Track command start time for audit
 _start_time: float = 0
@@ -181,6 +199,25 @@ def _format_cached_update_help(formatter):
     )
 
 
+def _release_readiness_check() -> dict:
+    level = RELEASE_READINESS["level"]
+    if level == "stable":
+        status = "pass"
+        fix = None
+    elif level == "beta":
+        status = "warn"
+        fix = "record live smoke/E2E evidence before declaring stable"
+    else:
+        status = "fail"
+        fix = "close FCC and mock upstream coverage gaps before publishing"
+    return {
+        "check": "release_readiness",
+        "status": status,
+        "fix": fix,
+        "details": RELEASE_READINESS,
+    }
+
+
 # --- Helper decorators ---
 
 
@@ -321,6 +358,7 @@ def reference_cmd():
         "schema_version": output.SCHEMA_VERSION,
         "risk_tier": "T1",
         "minimum_skill_version": SKILL_MIN_VERSION,
+        "release_readiness": RELEASE_READINESS,
         "permission_levels": {
             "read-only": "Read mailbox, calendar, folders, rules, contacts, and diagnostics",
             "write": (
@@ -446,6 +484,7 @@ def doctor_cmd():
             },
         }
     )
+    checks.append(_release_readiness_check())
     path = config_path()
     checks.append(
         {

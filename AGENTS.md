@@ -11,3 +11,5 @@ This repository is an AI-native CLI project. Agents must start with
 Before completing work, run the relevant checklist from the spec you touched.
 
 Before release, Functional Contract Coverage must remain 100%: every public README / Skill / reference / help / context / doctor / changelog / update behavior needs command-level tests.
+
+Release readiness must be explicit: `reference.release_readiness` and `doctor` declare `stable`, `beta`, or `unpublishable`; `stable` requires recorded live smoke/E2E evidence.

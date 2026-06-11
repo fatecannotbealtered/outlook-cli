@@ -46,7 +46,7 @@ Run in order; close out each step against the matching spec's checklist:
 2. Before changing a Skill, read `SKILL-SPEC.md`; **never hardcode drift-prone params/schema in the Skill** — point to `reference`.
 3. After changing behavior: sync `CHANGELOG.md` (single source of truth) and the matching `SKILL.md`; if you used a new command, raise the Skill's `min_version`.
 4. Before commit: unit tests + CI-scoped lint/format all green.
-5. Before release: Functional Contract Coverage is 100% for every public README / Skill / reference / help / context / doctor / changelog / update behavior.
+5. Before release: Functional Contract Coverage is 100% for every public README / Skill / reference / help / context / doctor / changelog / update behavior; `reference.release_readiness` and `doctor` must honestly declare `stable`, `beta`, or `unpublishable`.
 
 ## Self-check (must pass on completion)
 
@@ -54,5 +54,6 @@ Run in order; close out each step against the matching spec's checklist:
 - [ ] stdout clean, envelope valid, exit code consistent with retryable
 - [ ] External content tagged `_untrusted` (see SEC-SPEC §2)
 - [ ] Functional Contract Coverage is 100% for public behavior
+- [ ] Release readiness is declared in `reference` and checked by `doctor`; `stable` has recorded live smoke/E2E evidence
 - [ ] `CHANGELOG.md` updated; derived artifacts (release-notes / runtime changelog) share the same source
 - [ ] Matching `SKILL.md` synced

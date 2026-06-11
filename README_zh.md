@@ -116,7 +116,7 @@ npm ci --ignore-scripts
 
 Go 项目的 race test 需要 `CGO_ENABLED=1` 和 C 编译器。CI 会在 Linux race test 前准备所需工具链。
 
-发布门禁：README、Skill、`reference`、`--help`、`context`、`doctor`、`changelog` 或 `update` 中声明的公开行为必须有命令级测试。目标是 **Functional Contract Coverage = 100%**；数字代码覆盖率是辅助指标。
+发布门禁：README、Skill、`reference`、`--help`、`context`、`doctor`、`changelog` 或 `update` 中声明的公开行为必须有命令级测试。目标是 **Functional Contract Coverage = 100%**；数字代码覆盖率是辅助指标。`outlook-cli reference` 会报告 `release_readiness.level`；没有真实环境 smoke/E2E 记录时，工具必须声明为 `beta`，不能声明为 `stable`。
 
 ## 链接
 
