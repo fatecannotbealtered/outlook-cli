@@ -98,7 +98,7 @@ Always parse the JSON envelope and check `ok` first.
 - Exit `7` / `E_NETWORK`, `E_RATE_LIMITED`, `E_SERVER`: back off and retry if the task is still valid.
 - Exit `8` / `E_TIMEOUT`: back off and retry.
 
-Errors are on stderr in JSON mode; stdout should be empty on failure.
+In JSON mode stdout carries exactly one success or failure envelope; parse stdout and check `.ok` first. stderr only adds human-readable context.
 
 ## Security Boundary
 

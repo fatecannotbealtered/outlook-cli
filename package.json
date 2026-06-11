@@ -28,7 +28,9 @@
     "outlook-cli": "scripts/run.js"
   },
   "optionalDependencies": {
+    "@fatecannotbealtered-/outlook-cli-darwin-arm64": "1.1.0",
     "@fatecannotbealtered-/outlook-cli-darwin-x64": "1.1.0",
+    "@fatecannotbealtered-/outlook-cli-linux-arm64": "1.1.0",
     "@fatecannotbealtered-/outlook-cli-linux-x64": "1.1.0",
     "@fatecannotbealtered-/outlook-cli-win32-arm64": "1.1.0",
     "@fatecannotbealtered-/outlook-cli-win32-x64": "1.1.0"

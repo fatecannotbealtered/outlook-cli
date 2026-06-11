@@ -272,7 +272,11 @@ def error_json(
     details: dict[str, Any] | None = None,
     retryable: bool | None = None,
 ) -> None:
-    """Print structured error envelope to stderr."""
+    """Print the structured error envelope to stdout (the JSON contract channel).
+
+    Agents always parse stdout and check `ok` first; stderr only carries a short
+    human-readable explanation as side-channel context.
+    """
     semantic = _semantic_code(code)
     error_details = dict(details or {})
     if hint:
@@ -281,9 +285,10 @@ def error_json(
         error_details.setdefault("hint", ERROR_HINTS[semantic])
     _dump_json(
         error_envelope(msg, semantic, details=error_details, retryable=retryable),
-        file=sys.stderr,
         compact=True,
     )
+    if not _quiet:
+        print(f"{semantic}: {msg}", file=sys.stderr)
 
 
 # --- Human-readable output ---

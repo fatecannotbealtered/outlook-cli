@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- darwin-arm64 (Apple Silicon) and linux-arm64 platform packages, built on `macos-14` and `ubuntu-24.04-arm` runners.
 - Added runtime `changelog [--since]` derived from `CHANGELOG.md`.
 - Added version, schema, Skill compatibility, risk tier, permission, and security metadata to self-description output.
 - Added `_untrusted` markers to externally sourced Outlook fields returned to agents.
@@ -16,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- In JSON mode the failure envelope is now the single JSON document on stdout (stderr keeps a short human-readable line), matching CLI-SPEC §4: agents always parse stdout and check `ok` first.
 - Bumped the CLI output schema to `2.0` and normalized command output timestamps to ISO 8601 UTC.
 - Changed write dry-runs to enter command-specific preview paths instead of returning only a generic command preview.
 - Changed `mail batch` to return per-item results and bind batch confirm tokens to the observed item versions.
@@ -31,6 +33,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented the tool as a T1 AI-native CLI and aligned mailbox content handling with the untrusted-content convention.
 - Release checksums are signed with Sigstore/Cosign, and install/update paths report signature verification status separately from checksum verification.
 - Made npm postinstall checksum verification hard-fail when checksums are missing or invalid.
+
 
 ## [1.1.0] - 2026-06-07
 

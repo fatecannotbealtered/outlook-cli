@@ -1,8 +1,6 @@
 """Tests for output module."""
 
 import json
-from io import StringIO
-from unittest import mock
 
 import pytest
 
@@ -58,22 +56,22 @@ def test_error_json(capsys):
     output.init(json_mode=True, quiet=False)
     output.error_json("not found", code="NOT_FOUND", hint="check ID")
     captured = capsys.readouterr()
-    assert captured.out == ""  # errors go to stderr, but capsys captures both
-    # The error should be on stderr
-    parsed = json.loads(captured.err)
+    # The failure envelope is the single JSON document on stdout
+    parsed = json.loads(captured.out)
     assert parsed["ok"] is False
     assert parsed["error"]["message"] == "not found"
     assert parsed["error"]["code"] == "E_NOT_FOUND"
     assert parsed["error"]["details"]["hint"] == "check ID"
+    # stderr only carries the human-readable side-channel line
+    assert "E_NOT_FOUND" in captured.err
 
 
-def test_error_json_default_hint():
+def test_error_json_default_hint(capsys):
     """error_json fills in default hint from ERROR_CODES."""
-    with mock.patch("sys.stderr", new_callable=StringIO) as mock_stderr:
-        output.error_json("forbidden", code="FORBIDDEN")
-        parsed = json.loads(mock_stderr.getvalue())
-        hint = parsed["error"]["details"]["hint"]
-        assert "permissions" in hint.lower() or "config" in hint.lower()
+    output.error_json("forbidden", code="FORBIDDEN")
+    parsed = json.loads(capsys.readouterr().out)
+    hint = parsed["error"]["details"]["hint"]
+    assert "permissions" in hint.lower() or "config" in hint.lower()
 
 
 def test_success_suppressed_in_quiet(capsys):
@@ -122,7 +120,7 @@ def test_handle_error_json_mode(capsys):
     with pytest.raises(SystemExit):
         output.handle_error("fatal", "CONFIG_ERROR", exit_code=3)
     captured = capsys.readouterr()
-    parsed = json.loads(captured.err)
+    parsed = json.loads(captured.out)
     assert parsed["error"]["code"] == "E_CONFIG"
 
 
