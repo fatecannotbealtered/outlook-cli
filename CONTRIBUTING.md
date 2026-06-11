@@ -74,6 +74,14 @@ For each new or changed command, cover success, invalid arguments, config/auth/p
 
 Numeric line coverage is tracked separately and may ratchet upward, but it does not replace missing contract tests.
 
+Release readiness is machine-readable:
+
+- `stable`: FCC is 100%, mock upstream/contract tests cover success and failure paths, and live smoke/E2E evidence is recorded for the release candidate.
+- `beta`: FCC is 100% and mock upstream/contract tests are complete, but live smoke/E2E evidence is missing or explicitly unavailable.
+- `unpublishable`: any public behavior lacks command-level tests, or mock upstream/contract tests cover only happy paths.
+
+Keep `outlook-cli reference` `release_readiness` and `outlook-cli doctor`'s `release_readiness` check honest when test evidence changes.
+
 ## Pull requests
 
 1. **One logical change per PR** when possible.

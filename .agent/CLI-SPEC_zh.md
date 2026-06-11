@@ -260,6 +260,21 @@ confirm token 约定：
   "data": {
     "tool": "tool-name",
     "version": "1.0.0",
+    "release_readiness": {
+      "level": "beta",
+      "fcc_required": true,
+      "fcc_status": "verified",
+      "mock_upstream_required": true,
+      "mock_upstream_status": "verified",
+      "live_smoke_required_for_stable": true,
+      "live_smoke_status": "missing",
+      "reason": "Stable requires recorded live smoke/E2E evidence.",
+      "required_evidence": [
+        "functional_contract_coverage_100",
+        "mock_upstream_contract_tests",
+        "recorded_live_smoke_for_stable"
+      ]
+    },
     "commands": [
       {
         "path": "resource delete",
@@ -283,6 +298,21 @@ confirm token 约定：
   }
 }
 ```
+
+`release_readiness` 是机器可读的发布门禁字段。每个 AI 原生 CLI 的
+`reference` 都必须包含：
+
+- `level`：`stable`、`beta` 或 `unpublishable`。
+- `stable`：FCC 达到 100%；mock upstream / contract tests 覆盖外部行为；
+  且该 release candidate 至少有一次可追溯的真实环境 smoke/E2E 记录。
+- `beta`：FCC 达到 100%，mock upstream / contract tests 完整，但缺少真实
+  smoke/E2E 记录，或项目明确声明暂不具备真实 E2E 条件。
+- `unpublishable`：任一公开行为缺少命令级测试，或 mock upstream / contract
+  tests 只覆盖 happy path，未覆盖失败、鉴权、分页、空结果、限流等行为。
+- `fcc_status`、`mock_upstream_status`、`live_smoke_status` 使用
+  `verified`、`missing`、`not_applicable` 或 `unknown`；`stable` 对必需项不得
+  使用 `missing` 或 `unknown`。
+- `required_evidence[]` 列出 Agent 或发布脚本信任该等级前应检查的证据。
 
 ### context
 
@@ -325,6 +355,11 @@ confirm token 约定：
         "check": "network",
         "status": "fail",
         "fix": "set HTTP_PROXY or check VPN"
+      },
+      {
+        "check": "release_readiness",
+        "status": "warn",
+        "fix": "record live smoke/E2E evidence before declaring stable"
       }
     ]
   },
@@ -333,6 +368,11 @@ confirm token 约定：
   }
 }
 ```
+
+`doctor` 必须包含 `check: "release_readiness"`，并与 `reference` 报告同一个
+发布等级。`stable` 使用 `pass`，有意声明的 `beta` 使用 `warn`，
+`unpublishable` 或自称 `stable` 但证据缺失时使用 `fail`。非 `pass` 状态应给出
+可执行的 `fix`。
 
 ### changelog
 
@@ -420,6 +460,22 @@ tool changelog --since 1.0.3      # 只返回比 1.0.3 新的版本
 - 存在已知 FCC 缺口时，不得打发布 tag。
 
 CI 应在每个 PR 上运行单测和命令级测试。数字覆盖率门槛可以按仓库逐步抬升，但发布标准是绝对的：公开功能契约必须被覆盖。
+
+### 发布就绪等级
+
+发布就绪比「测试通过」更严格：
+
+- **Stable**：FCC 达到 100%；mock upstream / contract tests 覆盖成功、
+  参数校验、配置/认证/权限失败、上游/网络/限流/超时失败、空结果、分页、输出
+  schema、exit code、stdout/stderr 边界；并且该 release candidate 至少有一次
+  真实环境 smoke/E2E 记录。
+- **Beta**：FCC 达到 100%，mock upstream / contract tests 具备同等行为宽度，
+  但缺少真实环境 smoke/E2E 记录，或项目明确声明暂不具备真实 E2E 条件。
+- **Unpublishable**：任何公开命令、参数、输出或错误行为缺少命令级测试，或
+  mock upstream 测试只覆盖 happy path。
+
+`reference.release_readiness` 和 `doctor.checks[]` 是这道门禁的机器可读出口。
+仓库可以选择不发布 `beta` 产物，但没有上述真实证据时不得自称 `stable`。
 
 ## 14. 版本与兼容策略
 
@@ -564,6 +620,7 @@ release 校验基线：
 - [ ] 提供 `reference` / `context` / `doctor`
 - [ ] 提供 `changelog [--since]`，与 CHANGELOG/release-notes 同源
 - [ ] 工具可报告自身版本（`--version` 与 `context.version`）
+- [ ] `reference` 报告 `release_readiness`，`doctor` 检查它
 - [ ] （含 self-update 时）实现 `update --check` / `--dry-run` / `--confirm`
 - [ ] （含 self-update 时）release 完整性被校验，签名状态显式返回
 - [ ] （含 self-update 时）整个 Skill 目录同步纳入 update 结果
@@ -571,6 +628,7 @@ release 校验基线：
 - [ ] 查询命令支持 `fields` / `compact`
 - [ ] 列表命令支持分页或明确说明无需分页
 - [ ] README / Skill / reference / help / context / doctor / changelog / update 中声明的公开行为达到 100% 功能契约覆盖率
+- [ ] Stable release 有真实环境 smoke/E2E 记录；否则工具声明为 `beta`
 - [ ] 所有时间为 ISO 8601 UTC
 - [ ] 所有 ID 为字符串
 - [ ] 敏感信息全链路脱敏

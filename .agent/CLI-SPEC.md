@@ -262,6 +262,21 @@ Declares the tool's capabilities, commands, params, output schema, error codes, 
   "data": {
     "tool": "tool-name",
     "version": "1.0.0",
+    "release_readiness": {
+      "level": "beta",
+      "fcc_required": true,
+      "fcc_status": "verified",
+      "mock_upstream_required": true,
+      "mock_upstream_status": "verified",
+      "live_smoke_required_for_stable": true,
+      "live_smoke_status": "missing",
+      "reason": "Stable requires recorded live smoke/E2E evidence.",
+      "required_evidence": [
+        "functional_contract_coverage_100",
+        "mock_upstream_contract_tests",
+        "recorded_live_smoke_for_stable"
+      ]
+    },
     "commands": [
       {
         "path": "resource delete",
@@ -285,6 +300,23 @@ Declares the tool's capabilities, commands, params, output schema, error codes, 
   }
 }
 ```
+
+`release_readiness` is the machine-readable release gate. It must appear in
+`reference` for every AI-native CLI:
+
+- `level`: `stable`, `beta`, or `unpublishable`.
+- `stable`: FCC is 100%, mock upstream/contract tests cover external behavior,
+  and at least one recorded live smoke/E2E run exists for the release candidate.
+- `beta`: FCC is 100% and mock upstream/contract tests exist, but live
+  smoke/E2E evidence is missing or explicitly not available yet.
+- `unpublishable`: any public behavior lacks command-level coverage, or mock
+  upstream/contract tests cover only happy paths while failure/auth/pagination/
+  empty/rate-limit behavior remains untested.
+- `fcc_status`, `mock_upstream_status`, and `live_smoke_status` use
+  `verified`, `missing`, `not_applicable`, or `unknown`; `stable` may not use
+  `missing` or `unknown` for any required item.
+- `required_evidence[]` names the evidence an agent or release script should
+  inspect before trusting the level.
 
 ### context
 
@@ -327,6 +359,11 @@ Environment and risk check-up; each item gives an actionable fix.
         "check": "network",
         "status": "fail",
         "fix": "set HTTP_PROXY or check VPN"
+      },
+      {
+        "check": "release_readiness",
+        "status": "warn",
+        "fix": "record live smoke/E2E evidence before declaring stable"
       }
     ]
   },
@@ -335,6 +372,12 @@ Environment and risk check-up; each item gives an actionable fix.
   }
 }
 ```
+
+`doctor` must include `check: "release_readiness"` with the same release level
+reported by `reference`. Use `pass` for `stable`, `warn` for intentional `beta`,
+and `fail` for `unpublishable` or for a declared `stable` state with missing
+evidence. The check should include an actionable `fix` when the status is not
+`pass`.
 
 ### changelog
 
@@ -433,6 +476,25 @@ What `FCC = 100%` means:
 CI should run the unit and command-level suites for every PR. Numeric coverage
 thresholds may ratchet upward over time per repository, but the release standard
 is absolute: public functional contracts must be covered.
+
+### Release readiness levels
+
+Release readiness is deliberately stricter than "tests pass":
+
+- **Stable**: FCC is 100%; mock upstream/contract tests cover success,
+  validation, config/auth/permission failures, upstream/network/rate-limit/
+  timeout failures, empty results, pagination, output schema, exit codes, and
+  stdout/stderr boundaries; at least one live smoke/E2E run has been recorded
+  for the release candidate.
+- **Beta**: FCC is 100% and mock upstream/contract tests meet the same
+  behavioral breadth, but recorded live smoke/E2E evidence is missing or the
+  project explicitly declares that live E2E is not available yet.
+- **Unpublishable**: any public command/flag/output/error behavior lacks
+  command-level coverage, or mock upstream tests only cover happy paths.
+
+`reference.release_readiness` and `doctor.checks[]` are the machine-readable
+surface for this gate. A repository may choose not to publish `beta` artifacts,
+but it must not describe itself as `stable` without the live evidence above.
 
 ## 14. Versioning and compatibility
 
@@ -602,6 +664,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - [ ] Provides `reference` / `context` / `doctor`
 - [ ] Provides `changelog [--since]`, same source as CHANGELOG/release-notes
 - [ ] Tool reports its own version (`--version` and `context.version`)
+- [ ] `reference` reports `release_readiness`, and `doctor` checks it
 - [ ] (with self-update) `update --check` / `--dry-run` / `--confirm` are implemented
 - [ ] (with self-update) release integrity is verified, and signature status is explicit
 - [ ] (with self-update) whole Skill directory sync is part of the update result
@@ -609,6 +672,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - [ ] Query commands support `fields` / `compact`
 - [ ] List commands support pagination or explicitly state none is needed
 - [ ] Functional Contract Coverage is 100% for public README / Skill / reference / help / context / doctor / changelog / update behavior
+- [ ] Stable releases have recorded live smoke/E2E evidence; otherwise the tool declares `beta`
 - [ ] All times ISO 8601 UTC
 - [ ] All IDs strings
 - [ ] Secrets redacted end to end
