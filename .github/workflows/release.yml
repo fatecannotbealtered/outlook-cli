@@ -14,7 +14,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-13, windows-2022]
+        # PyInstaller binaries are not cross-compiled: one runner per OS/arch.
+        # macos-13 = darwin-amd64, macos-14 = darwin-arm64 (Apple Silicon),
+        # ubuntu-24.04-arm = linux-arm64. win32-arm64 reuses the amd64 binary
+        # via Windows x64 emulation (see prepare-npm-platform-packages.js).
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
         python-version: ["3.12"]
     runs-on: ${{ matrix.os }}
 
@@ -47,7 +51,7 @@ jobs:
             "Windows" = "windows"
           }
           $platform = $platformMap["${{ runner.os }}"]
-          $arch = "amd64"
+          $arch = if ("${{ runner.arch }}" -eq "ARM64") { "arm64" } else { "amd64" }
           $base = "outlook-cli-$version-$platform-$arch"
           New-Item -ItemType Directory -Force -Path release | Out-Null
           if ("${{ runner.os }}" -eq "Windows") {
@@ -65,7 +69,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: outlook-cli-${{ runner.os }}
+          name: outlook-cli-${{ matrix.os }}
           path: release/*
 
   release:
