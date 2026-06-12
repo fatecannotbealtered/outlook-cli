@@ -160,7 +160,7 @@ jobs:
               echo "npm package ${PKG}@${VERSION} already published; skipping"
               continue
             fi
-            npm publish "$dir" --access public --provenance
+            npm publish "./$dir" --access public --provenance
           done
 
           if npm view "${ROOT_PKG}@${VERSION}" version 2>/dev/null | grep -qx "${VERSION}"; then
