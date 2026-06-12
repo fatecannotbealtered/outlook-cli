@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `--bcc` support on `mail send` and `mail draft-edit`; BCC recipients now appear in `draft-read` output (tagged `_untrusted`) and `draft-send` dry-run previews so agents can verify the full recipient list before sending.
 - `mail draft-edit` now supports `--html` and `--attachments` (appended to the draft), closing the gap with `mail send` so the draft-review workflow covers formatted mail with attachments.
+- Recorded live smoke evidence against a real Exchange mailbox (`docs/live-smoke-evidence.md`); `release_readiness` is now `stable` with `live_smoke_status: verified`.
 
 - FCC enumeration guard (`tests/test_fcc_guard.py`): enumerates every leaf command from live `reference` output and asserts each has a command-level test; skips while `fcc_status` is honestly declared non-verified, so the claim cannot be flipped without coverage.
 - Command-level tests for `setup login` (validation, dry-run token, confirm-required, password redaction) and `tools free-busy` / `tools rooms-free-busy` (usage and config-missing paths) — the three leaves the guard found uncovered.
@@ -63,6 +64,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `mail thread` help text rendered as mojibake on non-UTF-8 consoles (em dash in docstring replaced with ASCII).
+- `iso_utc` crashed with `InvalidTypeError` on exchangelib 5.x `EWSDateTime` values (rejects `astimezone(timezone.utc)`), breaking `mail list` against a live server; timestamps are now rebuilt from the epoch. Found by live smoke.
+- JSON output was mangled on Windows GBK consoles; stdout/stderr are now reconfigured to UTF-8 at the entry point per the CLI contract.
 
 ## [1.0.3] - 2026-05-06
 
