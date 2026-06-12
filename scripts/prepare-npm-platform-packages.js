@@ -46,9 +46,12 @@ function findArchiveExact(releaseOS, releaseArch) {
 }
 
 function extractZip(archive, binaryName, destBin) {
+  // PyInstaller binaries are tens of MB; the default 1 MiB maxBuffer
+  // makes execFileSync throw ENOBUFS when piping the binary via stdout.
+  const opts = { maxBuffer: 256 * 1024 * 1024 };
   const bytes = process.platform === "win32"
-    ? execFileSync("tar", ["-xf", archive, "-O", binaryName])
-    : execFileSync("unzip", ["-p", archive, binaryName]);
+    ? execFileSync("tar", ["-xf", archive, "-O", binaryName], opts)
+    : execFileSync("unzip", ["-p", archive, binaryName], opts);
   fs.writeFileSync(destBin, bytes);
 }
 
