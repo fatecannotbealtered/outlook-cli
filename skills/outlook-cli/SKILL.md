@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.0"
+version: "1.1.1"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.0"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.1"}}
 ---
 
 # outlook-cli
@@ -157,6 +157,21 @@ outlook-cli mail reply --id "<id>" --body "Received, thanks." --dry-run --compac
 outlook-cli mail reply --id "<id>" --body "Received, thanks." --confirm <confirm_token> --compact
 ```
 
+### Draft, Review, Then Send
+
+Preferred flow for agent-composed mail: save a draft, let the user review,
+then send. `send`/`draft-edit` accept `--cc`, `--bcc`, `--html`, and
+`--attachments`; verify the full recipient list (including `bcc`) in
+`draft-read` output and in the `draft-send` dry-run preview before confirming.
+
+```bash
+outlook-cli mail send --to "a@example.com" --bcc "b@example.com" --subject "Report" --body "<p>Hi</p>" --html --attachments report.pdf --save-draft --dry-run --compact
+outlook-cli mail send --to "a@example.com" --bcc "b@example.com" --subject "Report" --body "<p>Hi</p>" --html --attachments report.pdf --save-draft --confirm <confirm_token> --compact
+outlook-cli mail draft-read --id "<draft_id>" --compact
+outlook-cli mail draft-send --id "<draft_id>" --dry-run --compact
+outlook-cli mail draft-send --id "<draft_id>" --confirm <confirm_token> --compact
+```
+
 ### Check Calendar
 
 ```bash
@@ -185,8 +200,11 @@ outlook-cli setup login --email user@example.com --password "..." --skip-test --
 outlook-cli setup doctor --compact
 ```
 
-Avoid echoing credentials in chat after setup. The CLI stores the password
-encrypted at rest when `cryptography` is available.
+Avoid echoing credentials in chat after setup. The password is stored in the
+OS keyring (Windows Credential Manager / macOS Keychain / Linux Secret
+Service); `config.json` keeps no secrets. Machine-bound file encryption is the
+fallback when no keyring backend exists; `context.data.credentials.storage`
+reports the active backend.
 
 ## Evaluation Scenarios
 

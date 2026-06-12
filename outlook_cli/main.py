@@ -23,7 +23,7 @@ for _stream in (sys.stdout, sys.stderr):
         except Exception:
             pass
 
-SKILL_MIN_VERSION = "1.1.0"
+SKILL_MIN_VERSION = "1.1.1"
 RELEASE_READINESS = {
     "level": "stable",
     "fcc_required": True,
