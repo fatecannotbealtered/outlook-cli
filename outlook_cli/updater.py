@@ -152,11 +152,12 @@ def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict
         return []
     current = str(status.get("current_version") or __version__)
     latest = str(status.get("latest_version") or status.get("target_version") or "")
+    default_command = "outlook-cli update --dry-run --compact"
     command = status.get("command") or []
     if isinstance(command, list):
-        recommended = shlex.join(str(part) for part in command) if command else "outlook-cli update --dry-run --compact"
+        recommended = shlex.join(str(part) for part in command) if command else default_command
     else:
-        recommended = str(command) or "outlook-cli update --dry-run --compact"
+        recommended = str(command) or default_command
     return [
         {
             "type": "update_available",
@@ -172,8 +173,7 @@ def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict
             "source": source,
             "next_steps": [
                 "run the recommended command",
-                "after update, run outlook-cli changelog --since "
-                f"{current} --compact",
+                f"after update, run outlook-cli changelog --since {current} --compact",
                 "refresh outlook-cli reference --compact before using new behavior",
             ],
         }
@@ -256,7 +256,8 @@ def _now_iso(epoch: float | None = None) -> str:
 
     if epoch is None:
         epoch = time_now()
-    return _dt.datetime.fromtimestamp(epoch, tz=_dt.timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    moment = _dt.datetime.fromtimestamp(epoch, tz=_dt.timezone.utc).replace(microsecond=0)
+    return moment.isoformat().replace("+00:00", "Z")
 
 
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
