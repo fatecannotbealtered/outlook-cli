@@ -13,7 +13,7 @@ import sys
 import time
 from typing import Any
 
-SCHEMA_VERSION = "2.0"
+SCHEMA_VERSION = "1.0"
 FORMAT_JSON = "json"
 FORMAT_TEXT = "text"
 FORMAT_RAW = "raw"

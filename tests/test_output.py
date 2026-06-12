@@ -31,7 +31,7 @@ def test_print_json(capsys):
     captured = capsys.readouterr()
     parsed = json.loads(captured.out)
     assert parsed["ok"] is True
-    assert parsed["schema_version"] == "2.0"
+    assert parsed["schema_version"] == "1.0"
     assert parsed["data"]["key"] == "value"
     assert "duration_ms" in parsed["meta"]
 
