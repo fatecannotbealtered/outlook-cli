@@ -15,10 +15,11 @@ jobs:
       fail-fast: false
       matrix:
         # PyInstaller binaries are not cross-compiled: one runner per OS/arch.
-        # macos-13 = darwin-amd64, macos-14 = darwin-arm64 (Apple Silicon),
-        # ubuntu-24.04-arm = linux-arm64. win32-arm64 reuses the amd64 binary
-        # via Windows x64 emulation (see prepare-npm-platform-packages.js).
-        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-13, macos-14, windows-2022]
+        # macos-15-intel = darwin-amd64 (macos-13 retired 2025-12), macos-14 =
+        # darwin-arm64 (Apple Silicon), ubuntu-24.04-arm = linux-arm64.
+        # win32-arm64 reuses the amd64 binary via Windows x64 emulation
+        # (see prepare-npm-platform-packages.js).
+        os: [ubuntu-24.04, ubuntu-24.04-arm, macos-15-intel, macos-14, windows-2022]
         python-version: ["3.12"]
     runs-on: ${{ matrix.os }}
 
