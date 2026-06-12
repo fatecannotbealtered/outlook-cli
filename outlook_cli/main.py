@@ -14,18 +14,27 @@ import click
 from . import __version__, output
 from .audit import log as audit_log
 
+# The CLI contract requires UTF-8 JSON on stdout regardless of console code
+# page (Windows defaults to GBK/cp936, which mangles non-ASCII subjects).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        try:
+            _stream.reconfigure(encoding="utf-8")
+        except Exception:
+            pass
+
 SKILL_MIN_VERSION = "1.1.0"
 RELEASE_READINESS = {
-    "level": "beta",
+    "level": "stable",
     "fcc_required": True,
     "fcc_status": "verified",
     "mock_upstream_required": True,
     "mock_upstream_status": "verified",
     "live_smoke_required_for_stable": True,
-    "live_smoke_status": "missing",
+    "live_smoke_status": "verified",
     "reason": (
-        "FCC and mock upstream/contract tests are required; recorded live smoke/E2E "
-        "evidence is missing, so this release is beta."
+        "FCC, mock upstream/contract tests, and recorded live smoke against a real "
+        "Exchange mailbox (2026-06-12, see docs/live-smoke-evidence.md) all passed."
     ),
     "required_evidence": [
         "functional_contract_coverage_100",

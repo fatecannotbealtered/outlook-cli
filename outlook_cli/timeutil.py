@@ -15,7 +15,9 @@ def iso_utc(value) -> str:
         return str(value)
     if value.tzinfo is None:
         value = value.replace(tzinfo=timezone.utc)
-    value = value.astimezone(timezone.utc).replace(microsecond=0)
+    # EWSDateTime (exchangelib 5.x) rejects astimezone(timezone.utc); rebuild a
+    # plain aware datetime from the epoch instead of converting in place.
+    value = datetime.fromtimestamp(value.timestamp(), tz=timezone.utc).replace(microsecond=0)
     return value.isoformat().replace("+00:00", "Z")
 
 
