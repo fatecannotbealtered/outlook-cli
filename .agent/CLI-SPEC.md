@@ -472,7 +472,12 @@ What `FCC = 100%` means:
 - broad generated code, version constants, build metadata, or unreachable
   platform guards may be excluded from numeric coverage, but not from FCC if
   they are documented public behavior;
-- a release cannot be tagged while known FCC gaps remain.
+- a release cannot be tagged while known FCC gaps remain;
+- `fcc_status: "verified"` must be machine-backed by an enumeration guard
+  test: enumerate every leaf command from live `reference` output and assert
+  each one is invoked by at least one command-level test. The guard skips
+  while the status is honestly declared `missing`, and fails if the claim is
+  flipped to `verified` without the coverage (the template ships this guard).
 
 CI should run the unit and command-level suites for every PR. Numeric coverage
 thresholds may ratchet upward over time per repository, but the release standard
