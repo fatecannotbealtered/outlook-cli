@@ -261,8 +261,8 @@ class TestSelfDescription:
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["current_version"] == "1.1.0"
-        assert data["entries"][0]["version"] == "Unreleased"
+        assert data["current_version"] == "1.1.1"
+        assert data["entries"][0]["version"] == "1.1.1"
 
 
 class TestPermissionEnforcement:

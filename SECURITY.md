@@ -45,14 +45,20 @@ The CLI provides no command to raise permissions. A human must edit
 
 ## Credential Storage
 
-- Config lives at `~/.outlook-cli/config.json`.
-- The config directory is set to `0700` where supported.
-- The config file is set to `0600` where supported.
-- Passwords are encrypted at rest with `cryptography.Fernet` using a
-  machine-bound key derived with PBKDF2-SHA256 at 600,000 iterations.
-- Legacy plaintext passwords can be read, but `setup login` writes encrypted
-  values.
-- `OUTLOOK_PASSWORD` may override config for automation and is never persisted.
+- The Exchange password is stored in the OS keyring (Windows Credential
+  Manager / macOS Keychain / Linux Secret Service). `config.json` keeps zero
+  secrets, only a `password_storage` marker naming the active backend.
+- When no keyring backend exists (e.g. headless Linux without Secret Service),
+  the CLI falls back to file encryption with `cryptography.Fernet` using a
+  machine-bound key derived with PBKDF2-SHA256 at 600,000 iterations, and the
+  marker reports `encrypted-file`. `context.data.credentials.storage` shows
+  which backend is active.
+- Config lives at `~/.outlook-cli/config.json`; the directory is set to `0700`
+  and the file to `0600` where supported (on Windows these are best-effort,
+  not ACL-equivalent).
+- `OUTLOOK_PASSWORD` may override config for automation and is never persisted;
+  environment variables are the preferred channel for short-lived agent
+  sessions.
 - Passwords, confirm tokens, access tokens, secrets, authorization headers, and
   cookies are redacted from audit logs and structured error details.
 
