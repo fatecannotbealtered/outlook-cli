@@ -97,9 +97,12 @@ class TestConfigIntegration:
     """Test that config save/load properly encrypts/decrypts."""
 
     def test_save_encrypts_password(self, tmp_path, monkeypatch):
-        """Config save should encrypt the password field."""
+        """Without a keyring backend, save falls back to encrypting the password field."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
         monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        from outlook_cli import secret_store
+
+        monkeypatch.setattr(secret_store, "set_password", lambda _s: False)
 
         from outlook_cli.config import save
 
@@ -138,9 +141,12 @@ class TestConfigIntegration:
         assert cfg["password"] == "plain-text-pwd"
 
     def test_env_password_not_double_encrypted(self, tmp_path, monkeypatch):
-        """Password from env var should not be encrypted on next save cycle."""
+        """Password from env var should not be encrypted on next save cycle (file fallback)."""
         monkeypatch.setattr("outlook_cli.config.config_dir", lambda: tmp_path)
         monkeypatch.setattr("outlook_cli.config.config_path", lambda: tmp_path / "config.json")
+        from outlook_cli import secret_store
+
+        monkeypatch.setattr(secret_store, "set_password", lambda _s: False)
 
         from outlook_cli.config import load, save
 

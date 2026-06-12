@@ -105,14 +105,29 @@ def load() -> dict:
             print(f"Warning: cannot read config file: {e}", file=sys.stderr)
             return {}
 
-    # Decrypt password from file
-    pwd = cfg.get("password", "")
-    if pwd:
-        try:
-            cfg["password"] = decrypt(pwd)
-        except DecryptionError as e:
-            print(f"Warning: {e}", file=sys.stderr)
+    # Resolve the password from its storage backend (SEC-SPEC §4):
+    # keyring marker -> OS keyring; otherwise decrypt the file-held value.
+    if cfg.get("password_storage") == "keyring":
+        from . import secret_store
+
+        stored = secret_store.get_password()
+        if stored is None:
+            print(
+                "Warning: password not found in the OS keyring. "
+                "Run 'outlook-cli setup login' to re-configure.",
+                file=sys.stderr,
+            )
             cfg["password"] = ""
+        else:
+            cfg["password"] = stored
+    else:
+        pwd = cfg.get("password", "")
+        if pwd:
+            try:
+                cfg["password"] = decrypt(pwd)
+            except DecryptionError as e:
+                print(f"Warning: {e}", file=sys.stderr)
+                cfg["password"] = ""
 
     # Environment variable overrides
     # OUTLOOK_PASSWORD is supported for CI/CD and integration tests.
@@ -169,10 +184,19 @@ def save(cfg: dict) -> None:
     # Don't save env-only fields to file
     save_cfg = {k: v for k, v in cfg.items() if k != "permissions_mode"}
 
-    # Encrypt password before saving (skip if already encrypted)
+    # Keyring three-part pattern: password to the OS keyring, zero-secret
+    # config. Machine-bound encryption only as the visible fallback.
     pwd = save_cfg.get("password", "")
-    if pwd and not is_encrypted(pwd):
-        save_cfg["password"] = encrypt(pwd)
+    if pwd:
+        from . import secret_store
+
+        if not is_encrypted(pwd) and secret_store.set_password(pwd):
+            save_cfg.pop("password", None)
+            save_cfg["password_storage"] = "keyring"
+        else:
+            if not is_encrypted(pwd):
+                save_cfg["password"] = encrypt(pwd)
+            save_cfg["password_storage"] = "encrypted-file"
 
     # Atomic write: write to temp file, then rename
     tmp_fd = None

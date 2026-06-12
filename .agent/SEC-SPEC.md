@@ -62,9 +62,37 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 
 ## 4. Credential at rest (applies when holding credentials, from T1)
 
-- **Encrypt at rest**: use the platform keychain, or AES-256-GCM; derive the key from a machine-bound factor (PBKDF2 / scrypt, sufficient iterations), **never store plaintext**.
-- **Tighten file permissions**: credential / config files `0600` (owner-readable only).
-- **Minimal memory residency**: discard after use, don't log, don't put in stdout/stderr.
+The standard is the **keyring three-part pattern**, in order of preference:
+
+1. **Passwords are used once and discarded** — exchange them for tokens at
+   login, never persist them. When the upstream protocol genuinely needs a
+   durable secret (e.g. Basic auth), that secret itself goes into the keyring.
+2. **Secrets live in the OS keyring** (Windows Credential Manager / macOS
+   Keychain / Linux Secret Service). The decryption key is held by the OS and
+   bound to the user's login credentials — copying files off the machine
+   yields nothing decryptable, and per-user isolation is enforced by the OS.
+3. **The config file holds zero secrets** — only non-sensitive metadata (URL,
+   username, region) and a marker saying which storage backend is in use.
+
+Fallback and channel rules:
+
+- **File encryption is a fallback, not a peer**: when no keyring service
+  exists (headless Linux, some CI), AES-256-GCM with a machine-bound KDF
+  (PBKDF2 / scrypt) is acceptable — but its key derives from enumerable
+  factors, so it resists file exfiltration, not a determined local attacker.
+  `context.data.credentials` should report the active backend
+  (`keyring` / `encrypted-file` / `env`) so the degradation is visible.
+- **Env vars are the recommended non-interactive secret channel**. Avoid
+  `--password`-style flags as the documented path: argv is visible in process
+  listings and shell history. Keep such flags only for compatibility and say
+  so in help text.
+- **`0600` is a POSIX statement**: on Windows, `chmod`-style mode bits do not
+  translate to ACLs; protection there comes from the user-profile directory's
+  default ACL, or from not having a secret file at all (the keyring pattern).
+  Do not claim owner-only file permissions on Windows unless ACLs are set
+  explicitly.
+- **Minimal memory residency**: discard after use, don't log, don't put in
+  stdout/stderr.
 - Token acquire / refresh / expiry lifecycle is in `CLI-SPEC.md §15.1`; this section only covers "how to store static data at rest safely."
 
 ## 5. Supply chain (applies to anything distributed)
@@ -104,7 +132,7 @@ Agent-side convention (also written into the SKILL-SPEC usage):
 **From T1 (writes / holds credentials)**
 
 - [ ] Default `read-only`, agent cannot self-escalate
-- [ ] Credentials encrypted at rest + file permission `0600`
+- [ ] Credentials follow the keyring three-part pattern (password discarded / secrets in the OS keyring / zero-secret config); file encryption only as a visible fallback
 - [ ] Distribution checksum verified, hard-fail on mismatch; release checksum is signed or signature status is explicitly reported; dependencies locked + audited
 
 **T2 (high-risk / irreversible)**

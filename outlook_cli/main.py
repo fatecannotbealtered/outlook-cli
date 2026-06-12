@@ -444,6 +444,7 @@ def context_cmd():
         "credentials": {
             "configured": configured,
             "valid": configured,
+            "storage": cfg.get("password_storage", ""),
             "expires_at": "",
             "refreshable": False,
             "OUTLOOK_EMAIL": bool(os.environ.get("OUTLOOK_EMAIL")),
