@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- FCC enumeration guard (`tests/test_fcc_guard.py`): enumerates every leaf command from live `reference` output and asserts each has a command-level test; skips while `fcc_status` is honestly declared non-verified, so the claim cannot be flipped without coverage.
+- Command-level tests for `setup login` (validation, dry-run token, confirm-required, password redaction) and `tools free-busy` / `tools rooms-free-busy` (usage and config-missing paths) — the three leaves the guard found uncovered.
 - darwin-arm64 (Apple Silicon) and linux-arm64 platform packages, built on `macos-14` and `ubuntu-24.04-arm` runners.
 - Added runtime `changelog [--since]` derived from `CHANGELOG.md`.
 - Added version, schema, Skill compatibility, risk tier, permission, and security metadata to self-description output.
