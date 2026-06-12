@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `--bcc` support on `mail send` and `mail draft-edit`; BCC recipients now appear in `draft-read` output (tagged `_untrusted`) and `draft-send` dry-run previews so agents can verify the full recipient list before sending.
+- `mail draft-edit` now supports `--html` and `--attachments` (appended to the draft), closing the gap with `mail send` so the draft-review workflow covers formatted mail with attachments.
+
 - FCC enumeration guard (`tests/test_fcc_guard.py`): enumerates every leaf command from live `reference` output and asserts each has a command-level test; skips while `fcc_status` is honestly declared non-verified, so the claim cannot be flipped without coverage.
 - Command-level tests for `setup login` (validation, dry-run token, confirm-required, password redaction) and `tools free-busy` / `tools rooms-free-busy` (usage and config-missing paths) — the three leaves the guard found uncovered.
 - darwin-arm64 (Apple Silicon) and linux-arm64 platform packages, built on `macos-14` and `ubuntu-24.04-arm` runners.
@@ -56,6 +59,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Setup flow**: `setup login` is non-interactive in machine mode and participates in the dry-run/confirm flow.
 - **Legacy safety flags**: pre-1.1 `--preview` / `--send` command flags are compatibility-only and hidden from help/reference output.
 - **Documentation**: README and README_zh now document the self-update workflow.
+
+### Fixed
+
+- `mail thread` help text rendered as mojibake on non-UTF-8 consoles (em dash in docstring replaced with ASCII).
 
 ## [1.0.3] - 2026-05-06
 

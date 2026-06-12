@@ -133,8 +133,16 @@ class TestCLIHelp:
         assert code == 0
         assert "--html" in stdout
         assert "--attachments" in stdout
+        assert "--bcc" in stdout
         assert "--preview" not in stdout
         assert "--send" not in stdout
+
+    def test_mail_draft_edit_help(self):
+        code, stdout, _ = run_cli("mail", "draft-edit", "--help")
+        assert code == 0
+        assert "--html" in stdout
+        assert "--attachments" in stdout
+        assert "--bcc" in stdout
 
     def test_mail_reply_help(self):
         code, stdout, _ = run_cli("mail", "reply", "--help")

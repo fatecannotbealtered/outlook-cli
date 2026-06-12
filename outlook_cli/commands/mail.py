@@ -399,7 +399,7 @@ def mail_stats(ctx, folder, days, start, end, top):
 @click.option("--days", default=90)
 @click.pass_context
 def mail_thread(ctx, mail_id, days):
-    """Conversation view — group emails by subject."""
+    """Conversation view - group emails by subject."""
     from ..config import check_permission
 
     check_permission("mail thread")
@@ -1025,13 +1025,14 @@ def mail_delete(ctx, mail_id, force):
 @mail_group.command("send")
 @click.option("--to", "to_addr", required=True, help="Recipient emails (comma-sep)")
 @click.option("--cc", default=None)
+@click.option("--bcc", default=None, help="BCC recipients (comma-sep)")
 @click.option("--subject", required=True)
 @click.option("--body", required=True)
 @click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--attachments", multiple=True, help="File paths to attach")
 @click.option("--save-draft", is_flag=True, help="Save as draft instead of sending")
 @click.pass_context
-def mail_send(ctx, to_addr, cc, subject, body, html, attachments, save_draft):
+def mail_send(ctx, to_addr, cc, bcc, subject, body, html, attachments, save_draft):
     """Send an email. Requires dry-run/confirm."""
     from ..config import check_permission
 
@@ -1039,10 +1040,12 @@ def mail_send(ctx, to_addr, cc, subject, body, html, attachments, save_draft):
 
     to_list = [a.strip() for a in to_addr.split(",")]
     cc_list = [a.strip() for a in cc.split(",")] if cc else []
+    bcc_list = [a.strip() for a in bcc.split(",")] if bcc else []
 
     preview_data = {
         "to": to_list,
         "cc": cc_list,
+        "bcc": bcc_list,
         "subject": subject,
         "body_preview": body[:200] + ("..." if len(body) > 200 else ""),
         "html": html,
@@ -1074,6 +1077,7 @@ def mail_send(ctx, to_addr, cc, subject, body, html, attachments, save_draft):
         body=msg_body,
         to_recipients=[Mailbox(email_address=a) for a in to_list],
         cc_recipients=[Mailbox(email_address=a) for a in cc_list] if cc_list else None,
+        bcc_recipients=[Mailbox(email_address=a) for a in bcc_list] if bcc_list else None,
     )
 
     for att_path in attachments:
@@ -1398,8 +1402,9 @@ def mail_draft_read(ctx, mail_id):
         "subject": item.subject or "",
         "to": [m.email_address for m in (item.to_recipients or [])],
         "cc": [m.email_address for m in (item.cc_recipients or [])],
+        "bcc": [m.email_address for m in (item.bcc_recipients or [])],
         "body": item.text_body or "",
-        "_untrusted": ["subject", "to", "cc", "body"],
+        "_untrusted": ["subject", "to", "cc", "bcc", "body"],
     }
 
     if output.is_json():
@@ -1415,11 +1420,14 @@ def mail_draft_read(ctx, mail_id):
 @click.option("--id", "mail_id", required=True)
 @click.option("--subject", default=None)
 @click.option("--body", default=None)
+@click.option("--html", is_flag=True, help="Body is HTML (default: plain text)")
 @click.option("--to", "to_addr", default=None)
 @click.option("--cc", default=None)
+@click.option("--bcc", default=None, help="BCC recipients (comma-sep)")
+@click.option("--attachments", multiple=True, help="File paths to attach (appended)")
 @click.pass_context
-def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
-    """Edit a draft (subject, body, recipients)."""
+def mail_draft_edit(ctx, mail_id, subject, body, html, to_addr, cc, bcc, attachments):
+    """Edit a draft (subject, body, recipients, attachments)."""
     from ..config import check_permission
 
     check_permission("mail draft-edit")
@@ -1432,21 +1440,27 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
             "Edit draft",
-            {"id": mail_id, "subject": subject, "body": body[:100] if body else None},
+            {
+                "id": mail_id,
+                "subject": subject,
+                "body": body[:100] if body else None,
+                "html": html,
+                "attachments": list(attachments) if attachments else [],
+            },
             resource_id=_item_id(item),
             resource_version=item_version(item),
         )
         return
 
     _confirm_item("mail draft-edit", item)
-    from exchangelib import Mailbox
+    from exchangelib import FileAttachment, HTMLBody, Mailbox
 
     updated = []
     if subject is not None:
         item.subject = subject
         updated.append("subject")
     if body is not None:
-        item.body = body
+        item.body = HTMLBody(body) if html else body
         updated.append("body")
     if to_addr is not None:
         item.to_recipients = [Mailbox(email_address=a.strip()) for a in to_addr.split(",")]
@@ -1454,6 +1468,14 @@ def mail_draft_edit(ctx, mail_id, subject, body, to_addr, cc):
     if cc is not None:
         item.cc_recipients = [Mailbox(email_address=a.strip()) for a in cc.split(",")]
         updated.append("cc")
+    if bcc is not None:
+        item.bcc_recipients = [Mailbox(email_address=a.strip()) for a in bcc.split(",")]
+        updated.append("bcc")
+    for att_path in attachments:
+        with open(att_path, "rb") as f:
+            content = f.read()
+        item.attach(FileAttachment(name=os.path.basename(att_path), content=content))
+        updated.append(f"attachment:{os.path.basename(att_path)}")
 
     if not updated:
         output.handle_error(
@@ -1495,6 +1517,8 @@ def mail_draft_send(ctx, mail_id):
                 "id": mail_id,
                 "subject": item.subject,
                 "to": [m.email_address for m in (item.to_recipients or [])],
+                "cc": [m.email_address for m in (item.cc_recipients or [])],
+                "bcc": [m.email_address for m in (item.bcc_recipients or [])],
             },
             resource_id=_item_id(item),
             resource_version=item_version(item),
