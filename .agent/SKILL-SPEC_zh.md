@@ -32,12 +32,15 @@ Skill-compatible runtime 会校验这些字段，违反可能导致 Skill 无法
 ```yaml
 ---
 name: outlook-cli                # 必填
+version: "1.1.0"                 # 本规范必填：与工具发布版本一致
 description: "..."               # 必填
 license: MIT                     # 可选
 user-invocable: true             # 可选（本仓库扩展）
 metadata: { ... }                  # CLI 门面 Skill 在本规范中必填
 ---
 ```
+
+`version`（本规范必填）：Skill 的发布版本。与随行工具版本（`package.json` / 构建清单）及 `metadata.requires.min_version` 保持相等——三处一个数字，发布时一起 bump。
 
 `name`（必填）：
 
@@ -172,6 +175,7 @@ skills/<name>/
 - [ ] 正文 < 500 行，细节下沉
 - [ ] 引用一层深，长引用文件带目录
 - [ ] `metadata.requires.bins` 声明依赖二进制与 `min_version`
+- [ ] frontmatter `version` 与工具发布版本、`metadata.requires.min_version` 三处相等
 - [ ] 不复制会漂移的参数 / schema，指向 `reference`
 - [ ] 顶部安装块可复制即跑，与 `requires.bins` 一致
 - [ ] 顶部安装块使用 `npx skills add ...`；CLI 没有名为 `install-skill` 的命令

@@ -32,12 +32,15 @@ Skill-compatible runtimes validate these; violating them can prevent the Skill f
 ```yaml
 ---
 name: outlook-cli                # required
+version: "1.1.0"                 # required in this spec: matches the tool release
 description: "..."               # required
 license: MIT                     # optional
 user-invocable: true             # optional (this repo's extension)
 metadata: { ... }                  # required for CLI-front-door Skills in this spec
 ---
 ```
+
+`version` (required in this spec): the Skill release version. Keep it equal to the tool version it ships with (`package.json` / build manifest) and to `metadata.requires.min_version` — three values, one number, bumped together on release.
 
 `name` (required):
 
@@ -176,6 +179,7 @@ Conventions:
 - [ ] Body < 500 lines, detail pushed down
 - [ ] References one level deep, long reference files have a TOC
 - [ ] `metadata.requires.bins` declares the dependent binary with `min_version`
+- [ ] Frontmatter `version` equals the tool release version and `metadata.requires.min_version`
 - [ ] No copied drift-prone params / schema; point to `reference`
 - [ ] Top install block copy-paste-runnable, matches `requires.bins`
 - [ ] Top install block uses `npx skills add ...`; no CLI command named `install-skill`

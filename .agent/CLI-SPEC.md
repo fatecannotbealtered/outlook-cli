@@ -84,8 +84,8 @@ Conventions:
 ## 4. stdout / stderr rules
 
 - In `json` mode, stdout may contain only one JSON document, or NDJSON for explicitly streaming commands.
-- stderr may carry progress, warnings, diagnostics, error envelopes.
-- On error, stdout should be empty and the error envelope goes to stderr.
+- stderr may carry progress, warnings, and diagnostics.
+- On error in `json` mode, the failure envelope is that single JSON document on stdout — agents always parse stdout and check `ok`, never scrape stderr. stderr may add human-readable explanation.
 - `--quiet` may only suppress non-error info on stderr.
 - No banners, prompts, progress bars, or color codes before/after the JSON on stdout.
 - stdout / stderr are always **UTF-8 encoded, no BOM**, newline `\n`, so agents parse reliably across platforms (especially Windows).
@@ -172,6 +172,7 @@ tool resource delete --id 123 --confirm ct_9f2a...
 Confirm-token conventions:
 
 - The token must bind a hash of the operation content: command path, args, target resource ID, calling account, permission context.
+- The hash must be keyed (HMAC) with a machine-local secret (e.g. `~/.<tool>/confirm.secret`, created on first use, `0600`), so a token cannot be fabricated by recomputing a public hash — it must come from a real `--dry-run` on the same machine.
 - When a resource version is available, also bind it (version, etag, changekey, or updated_at) to prevent state drift.
 - The token must expire; `expires_at` is ISO 8601 UTC.
 - On expiry, changed args, or changed target state, execution returns `E_CONFLICT`, exit code 6.
@@ -566,9 +567,11 @@ Release verification baseline:
   signing from the tagged GitHub Actions release workflow. Verifiers should
   validate the bundle against the expected repository workflow identity and the
   GitHub OIDC issuer.
-- When local signature verification cannot run, the result must say so in
-  structured fields (`signature_verified: false`, `signature_policy`,
-  `signature_reason`) rather than implying checksum verification is a signature.
+- Update results carry `signature_status` (a short string describing where
+  release integrity verification happened: e.g. `verified`, `not_checked`,
+  `handled_by_npm_installer`, `manual_release_verification_required`) and
+  `signature_verified` (true only when local Sigstore verification actually
+  ran and succeeded). Never imply checksum verification is a signature.
 
 - After `update --confirm <token>` succeeds, return `previous_version` and `current_version` in `data`.
 - Also hint in the result: `run "changelog --since <previous_version>" to see what changed`.
