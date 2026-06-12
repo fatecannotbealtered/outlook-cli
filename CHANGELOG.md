@@ -33,6 +33,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
+- Exchange password now lives in the OS keyring; `config.json` keeps zero secrets, only a `password_storage` marker. Machine-bound AES encryption remains as the fallback when no keyring backend exists, and `context.data.credentials.storage` reports the active backend. Adds the `keyring` dependency.
+- Synced `.agent/` SEC-SPEC from the template: credential-at-rest is now the keyring three-part pattern (password discarded after login / secrets in the OS keyring / zero-secret config), file encryption demoted to a visible fallback, env vars as the recommended secret channel, and an honest note on Windows `0600` semantics.
 - Documented the tool as a T1 AI-native CLI and aligned mailbox content handling with the untrusted-content convention.
 - Release checksums are signed with Sigstore/Cosign, and install/update paths report signature verification status separately from checksum verification.
 - Made npm postinstall checksum verification hard-fail when checksums are missing or invalid.

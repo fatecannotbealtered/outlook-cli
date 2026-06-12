@@ -23,7 +23,8 @@ setup(
         "click>=8.0,<9.0",
         "exchangelib>=4.0,<6.0",
         "cryptography>=41.0",
-    ],
+        "keyring>=24.0",
+],
     extras_require={
         "dev": [
             "pytest>=7.0",

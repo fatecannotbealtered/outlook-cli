@@ -136,3 +136,34 @@ def test_save_corrupt_json(isolate_config):
     config.config_path().write_text("not json{{{", encoding="utf-8")
     cfg = config.load()
     assert cfg == {} or cfg.get("email") is None
+
+
+class TestKeyringStorage:
+    def test_save_uses_keyring_and_keeps_config_secret_free(self, fake_secret_store):
+        config.save({"email": "u@example.com", "password": "s3cret"})
+        raw = (config.config_path()).read_text(encoding="utf-8")
+        assert "s3cret" not in raw
+        assert '"password_storage": "keyring"' in raw
+        assert "password" not in json.loads(raw) or "password_storage" in raw
+
+        loaded = config.load()
+        assert loaded["password"] == "s3cret"
+        assert loaded["password_storage"] == "keyring"
+
+    def test_save_falls_back_to_encrypted_file(self, monkeypatch):
+        from outlook_cli import secret_store
+
+        monkeypatch.setattr(secret_store, "set_password", lambda _s: False)
+        config.save({"email": "u@example.com", "password": "fallback-pw"})
+        raw = (config.config_path()).read_text(encoding="utf-8")
+        assert "fallback-pw" not in raw
+        assert '"password_storage": "encrypted-file"' in raw
+
+        loaded = config.load()
+        assert loaded["password"] == "fallback-pw"
+
+    def test_missing_keyring_entry_degrades_to_empty_password(self, fake_secret_store):
+        config.save({"email": "u@example.com", "password": "vanish"})
+        fake_secret_store.clear()
+        loaded = config.load()
+        assert loaded["password"] == ""
