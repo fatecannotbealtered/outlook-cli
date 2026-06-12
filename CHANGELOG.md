@@ -25,7 +25,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Synced the `.agent/` spec copies from the ai-native-cli-spec template: stdout failure envelope (§4), HMAC confirm-token requirement (§7), signature_status/signature_verified fields (§14), Skill frontmatter `version` rule.
 - In JSON mode the failure envelope is now the single JSON document on stdout (stderr keeps a short human-readable line), matching CLI-SPEC §4: agents always parse stdout and check `ok` first.
-- Bumped the CLI output schema to `2.0` and normalized command output timestamps to ISO 8601 UTC.
+- Normalized command output timestamps to ISO 8601 UTC. The output schema version stays `1.0`: nothing has been released yet, so there are no external consumers of any earlier envelope shape and the first published contract starts at `1.0`.
 - Changed write dry-runs to enter command-specific preview paths instead of returning only a generic command preview.
 - Changed `mail batch` to return per-item results and bind batch confirm tokens to the observed item versions.
 - Expanded audit records with UTC timestamps, account context, local-write command coverage, and confirm-token redaction.

@@ -227,7 +227,7 @@ class TestSelfDescription:
         assert code == 0
         data = data_doc(stdout)
         assert data["tool"] == "outlook-cli"
-        assert data["schema_version"] == "2.0"
+        assert data["schema_version"] == "1.0"
         assert data["risk_tier"] == "T1"
         assert data["release_readiness"]["level"] == "stable"
         assert data["release_readiness"]["live_smoke_status"] == "verified"
