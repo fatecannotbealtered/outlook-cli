@@ -37,7 +37,7 @@
 5. **评估可选模式**（→ CLI-SPEC §15，按需）：令牌会过期？→ 凭证生命周期；有长任务？→ 异步 job；要扫码/验证码/审批？→ 人工介入。用得上才做，用不上跳过。
 6. **定安全档**（→ SEC-SPEC）：先判 T0/T1/T2 风险档，按档套用注入防护、最小权限、凭证落盘、供应链。
 7. **写 Skill**（→ SKILL-SPEC）：frontmatter（含 `requires.bins` + `min_version`）、触发清单、错误决策树、用法剧本。
-8. **配分发**（→ 共享 REPO-SPEC §4b）：npm 壳（`scripts/{install,run}.js`），二进制不入库。
+8. **配分发**（→ 共享 REPO-SPEC §4b）：npm 壳（`scripts/{run,prepare-npm-platform-packages}.js`），二进制不入库。
 9. **自检**：跑本地规范与共享仓库规范的检查清单 + 一致性校验（conformance）+ CI lint/format。
 
 ## 工作流 B：扩展本工具（改已有功能）

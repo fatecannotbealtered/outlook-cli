@@ -37,7 +37,7 @@ Run in order; close out each step against the matching spec's checklist:
 5. **Evaluate optional patterns** (→ CLI-SPEC.md §15, as needed): tokens expire? → credential lifecycle; long-running jobs? → async jobs; QR/captcha/approval? → human-in-the-loop. Do it only if you need it.
 6. **Set the security tier** (→ SEC-SPEC.md): classify T0/T1/T2, then apply injection defense, least privilege, credential-at-rest, and supply chain by tier.
 7. **Write the Skill** (→ SKILL-SPEC.md): frontmatter (with `requires.bins` + `min_version`), trigger list, error decision tree, usage playbooks.
-8. **Set up distribution** (→ shared REPO-SPEC.md §4b): npm wrapper (`scripts/{install,run}.js`), binary not committed.
+8. **Set up distribution** (→ shared REPO-SPEC.md §4b): npm wrapper (`scripts/{run,prepare-npm-platform-packages}.js`), binary not committed.
 9. **Self-check**: run all four spec checklists + conformance + CI lint/format.
 
 ## Workflow B: extend this tool (changing existing features)

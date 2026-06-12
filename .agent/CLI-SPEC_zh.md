@@ -82,8 +82,8 @@
 ## 4. stdout / stderr 规则
 
 - stdout 在 `json` 模式下只能出现一个 JSON 文档，或在明确流式命令中输出 NDJSON。
-- stderr 可输出进度、警告、诊断、错误 envelope。
-- 错误时 stdout 应为空，错误 envelope 输出到 stderr。
+- stderr 可输出进度、警告、诊断。
+- `json` 模式下出错时，失败 envelope 就是 stdout 上那个唯一的 JSON 文档——Agent 永远解析 stdout 并检查 `ok`，不从 stderr 抓取；stderr 可以补充人类可读的错误说明。
 - `--quiet` 只能抑制 stderr 上的非错误信息。
 - 不允许在 JSON stdout 前后打印 banner、提示语、进度条或颜色码。
 - stdout / stderr 一律 **UTF-8 编码，不带 BOM**，换行用 `\n`，确保跨平台（尤其 Windows）Agent 可稳定解析。
@@ -170,6 +170,7 @@ tool resource delete --id 123 --confirm ct_9f2a...
 confirm token 约定：
 
 - token 必须绑定操作内容哈希，包括命令路径、参数、目标资源 ID、调用账号、权限上下文。
+- 哈希必须用机器本地密钥做 HMAC（如 `~/.<tool>/confirm.secret`，首次使用时生成，权限 `0600`），使 token 无法通过重算公开哈希凭空铸造——它只能来自同一台机器上一次真实的 `--dry-run`。
 - 能获取资源版本时，也应绑定资源版本、etag、changekey 或 updated_at，防止状态漂移。
 - token 必须有过期时间，`expires_at` 使用 ISO 8601 UTC。
 - token 过期、操作参数变化、目标状态变化时，执行命令返回 `E_CONFLICT`，exit code 6。
@@ -524,7 +525,7 @@ release 校验基线：
 
 - 按 `checksums.txt` 校验归档/包；checksum 不匹配、缺失 checksum 文件、或缺少当前归档条目，都必须失败关闭。
 - 已签名 release 应由 tagged GitHub Actions release workflow 使用 Sigstore/Cosign keyless 模式签署 `checksums.txt`。验证端应绑定到预期仓库 workflow 身份和 GitHub OIDC issuer。
-- 当本地签名验证无法执行，结果必须用结构化字段说明（`signature_verified: false`、`signature_policy`、`signature_reason`），不能把 checksum 校验伪装成签名校验。
+- update 结果携带 `signature_status`（一个短字符串说明发布完整性在哪里被验证：如 `verified`、`not_checked`、`handled_by_npm_installer`、`manual_release_verification_required`）与 `signature_verified`（仅当本地 Sigstore 验证真实执行且成功时为 true）。不能把 checksum 校验伪装成签名校验。
 
 - `update --confirm <token>` 成功后，结果 `data` 中返回 `previous_version` 与 `current_version`。
 - 同时在结果中提示：`run "changelog --since <previous_version>" to see what changed`。
