@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Batch operations (CLI-SPEC §15): one command, one confirm token (single-use), one aggregated `items[].{target,ok,error{code,retryable}}` + `summary{total,succeeded,failed}` result. Plural inputs accept comma-separated or repeated forms and de-duplicate while preserving order; partial failures do not roll back, and `--continue-on-error` (default true) controls stop-on-first-failure.
+  - `mail batch` gains `categorize` (`--categories`), `flag`, `unflag`, `complete`, and `restore` actions on top of the existing `delete`/`mark-read`/`mark-unread`/`move` (class B, client-side loop).
+  - `mail draft-send` accepts plural `--ids` and sends a whole batch via native `account.bulk_send` (class A); a single `--id` is a batch of one with the same envelope.
+  - `cal batch --action create|update|delete` via native `account.bulk_create`/`bulk_update`/`bulk_delete` (class A). `create`/`update` take a JSON `--file`; `delete` takes plural `--ids`. `--send-notifications` (default true) controls meeting invitations/cancellations. Bulk delete is soft (moves to Deleted Items, recoverable) per the soft-delete-only policy.
+- `cal batch --action delete` joins `mail batch --action delete` as a `--dangerous` two-step-gated command (required in both dry-run and confirm steps).
+
+### Changed
+
+- `mail batch` and `mail draft-send` result shape moved to the §15.5 batch contract (`items[]` + `summary{total,succeeded,failed}`), replacing the previous `success`/`failed_ids`/`results` shape.
+
 ## [1.1.3] - 2026-06-14
 
 ### Added
