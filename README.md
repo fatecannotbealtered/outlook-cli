@@ -45,7 +45,7 @@ Worst-case risk tier: **T1 medium** - reads and writes Exchange mailbox state wi
 | Area | Commands | Agent use |
 |------|----------|-----------|
 | Mail | `mail list / search / read / stats / thread / attachments / move / mark / flag / categorize / delete / send / reply / forward / drafts` | Read and operate mailbox messages with permission-mode controls. |
-| Calendar | `cal list / create / update / delete` | Inspect and mutate calendar events when permission mode allows writes. |
+| Calendar | `cal list / get / create / update / delete` | Inspect and mutate calendar events when permission mode allows writes. |
 | Folders and rules | `folders ...`, `rules ...` | Manage mailbox folders and inbox rules. |
 | Tools | `tools contacts / freebusy / rooms / oof / meeting-response` | Resolve contacts, availability, rooms, OOF, and meeting responses. |
 | Setup and permissions | `setup login / status / doctor`, `context`, `doctor` | Authenticate, report permission mode, and verify Exchange connectivity. |

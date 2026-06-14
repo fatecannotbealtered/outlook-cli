@@ -179,3 +179,79 @@ def test_error_codes_complete():
     ]
     for code in expected_codes:
         assert code in output.ERROR_CODES, f"Missing error code: {code}"
+
+
+# --- handle_api_error: exception-type classification (replaces substring sniffing) ---
+
+
+class _FakeServerBusy(Exception):
+    """Stands in for exchangelib.errors.ErrorServerBusy by class name."""
+
+
+class ErrorServerBusy(Exception):
+    pass
+
+
+class ErrorItemNotFound(Exception):
+    pass
+
+
+class ReadTimeout(Exception):
+    pass
+
+
+def _api_error_exit(exc):
+    with pytest.raises(SystemExit) as ei:
+        output.init(json_mode=True, quiet=True)
+        output.handle_api_error(exc)
+    return ei.value.code
+
+
+def test_handle_api_error_maps_by_type_rate_limited(capsys):
+    code = _api_error_exit(ErrorServerBusy("server too busy, please retry"))
+    out = capsys.readouterr().out
+    parsed = json.loads(out[out.find("{") :])
+    assert parsed["error"]["code"] == "E_RATE_LIMITED"
+    assert parsed["error"]["retryable"] is True
+    assert code == 7
+
+
+def test_handle_api_error_maps_by_type_not_found(capsys):
+    _api_error_exit(ErrorItemNotFound("the item does not exist"))
+    out = capsys.readouterr().out
+    parsed = json.loads(out[out.find("{") :])
+    assert parsed["error"]["code"] == "E_NOT_FOUND"
+
+
+def test_handle_api_error_maps_by_type_timeout(capsys):
+    _api_error_exit(ReadTimeout("read timed out"))
+    out = capsys.readouterr().out
+    parsed = json.loads(out[out.find("{") :])
+    assert parsed["error"]["code"] == "E_TIMEOUT"
+
+
+def test_handle_api_error_falls_back_to_rate_limit_substring(capsys):
+    # An unmapped exception type whose message indicates throttling still classifies.
+    _api_error_exit(RuntimeError("HTTP 429 Too Many Requests"))
+    out = capsys.readouterr().out
+    parsed = json.loads(out[out.find("{") :])
+    assert parsed["error"]["code"] == "E_RATE_LIMITED"
+
+
+# --- error/success envelopes honor the global --compact flag ---
+
+
+def test_error_json_honors_compact(capsys):
+    output.init(json_mode=True, quiet=True, compact=True)
+    output.error_json("boom", "E_VALIDATION")
+    out = capsys.readouterr().out.strip()
+    assert ",\n" not in out and ": " not in out.split('"message"')[0]
+    assert json.loads(out)["error"]["code"] == "E_VALIDATION"
+
+
+def test_error_json_pretty_by_default(capsys):
+    output.init(json_mode=True, quiet=True, compact=False)
+    output.error_json("boom", "E_VALIDATION")
+    out = capsys.readouterr().out
+    assert "\n  " in out  # indented (pretty) output
+    assert json.loads(out[out.find("{") :])["error"]["code"] == "E_VALIDATION"

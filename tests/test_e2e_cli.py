@@ -262,7 +262,10 @@ class TestSelfDescription:
         assert code == 0
         data = data_doc(stdout)
         assert data["current_version"] == "1.1.1"
-        assert data["entries"][0]["version"] == "1.1.1"
+        # Skip a pending [Unreleased] section; the newest *released* entry must
+        # match the current version.
+        released = [e for e in data["entries"] if e["version"].lower() != "unreleased"]
+        assert released[0]["version"] == "1.1.1"
 
 
 class TestPermissionEnforcement:
