@@ -78,6 +78,8 @@ jobs:
     needs: build
     runs-on: ubuntu-24.04
     steps:
+      - uses: actions/checkout@v6
+
       - name: Download build artifacts
         uses: actions/download-artifact@v7
         with:
@@ -99,10 +101,25 @@ jobs:
         shell: bash
         run: cosign sign-blob --bundle release/checksums.txt.sigstore.json release/checksums.txt --yes
 
+      - name: Extract release notes from CHANGELOG
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          # Slice the '## [VERSION]' section out of CHANGELOG.md for this tag (awk: portable).
+          awk -v ver="$VERSION" '
+            /^## \[/ { if (found) exit; if (index($0, "[" ver "]")) found=1 }
+            found { print }
+          ' CHANGELOG.md > release-notes.md
+          # Defensive fallback: if the slice is empty, point at the changelog.
+          if [ ! -s release-notes.md ]; then
+            printf '## v%s\n\nSee [CHANGELOG.md](CHANGELOG.md) for details.\n' "$VERSION" > release-notes.md
+          fi
+
       - name: Upload GitHub Release assets
         uses: softprops/action-gh-release@v2
         with:
           files: release/*
+          body_path: release-notes.md
 
   publish-npm:
     name: Publish to npm
