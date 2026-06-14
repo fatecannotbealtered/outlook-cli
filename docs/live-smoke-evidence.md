@@ -13,6 +13,53 @@ Recorded live smoke run against a real Exchange mailbox, as required by
   All mail was sent to the account owner itself; smoke emails were
   soft-deleted afterwards.
 
+## 2026-06-15 — batch operations (live)
+
+Re-run against the same real mailbox for the new §15 batch commands. The
+mailbox defaults to `read-only` (owner safety setting), so every batch command
+was first exercised as `--dry-run --format json`; reversible writes were then
+run live with `OUTLOOK_PERMISSIONS=full` on 2–3 self-owned objects and cleaned
+up afterwards (categories cleared, flags removed, calendar events deleted,
+sent test emails soft-deleted, restored items re-deleted). No external
+attendees were ever added.
+
+**Method:** subprocess + `--format json`; envelope `ok`/`error` asserted;
+write path ran the full `--dry-run` → `--confirm <token>` cycle; aggregated
+`items[]` / `summary` shape and per-item `ok`/`error` asserted. No real data
+or secrets recorded here.
+
+| Command | Result | Notes |
+|---|---|---|
+| `mail batch categorize` (`--categories`) | **PASS (live)** | dry-run preview `items[].exists` + token; confirm applied `3/3 succeeded`; categories cleared afterward via `mail categorize --action clear` |
+| `mail batch flag` | **PASS (live)** | exercised in the partial-failure test below; reverted via `unflag` |
+| `mail batch unflag` | **PASS (live)** | `2/2 succeeded`, used to revert the flag test |
+| `mail batch complete` | **PASS (dry-run)** | dry-run preview + token valid; not run live (flag-completion state on shared inbox items left untouched) |
+| `mail batch restore` | **PASS (live)** | soft-deleted 2 self test emails, restored from trash `2/2 succeeded` (fresh trash IDs obtained via `mail search --folder trash`, since IDs change after the move) |
+| `mail batch delete` | **PASS (live)** | conditionally dangerous: missing `--dangerous` → `E_CONFIRMATION_REQUIRED`, exit 5; with `--dangerous` soft-deleted self test emails `2/2`, used for cleanup |
+| `mail draft-send` (plural `--ids`, native `bulk_send`) | **PASS (live)** | created 2 self drafts, batch-sent `2/2 succeeded`; received copies soft-deleted afterward |
+| `cal batch create` (`--file`, self only, `--no-send-notifications`) | **PASS (live)** | `2/2 succeeded`, real event IDs returned; no external attendees |
+| `cal batch update` (`--file`) | **PASS (dry-run)** | dry-run preview + token valid; not run live (no live update was needed beyond create/delete coverage) |
+| `cal batch delete` (plural `--ids`, soft `MOVE_TO_DELETED_ITEMS`) | **PASS (live)** | dangerous-gated (exit 5 without `--dangerous`); deleted the 2 created test events `2/2`, cleanup confirmed |
+
+### Contract points (live)
+
+| Point | Result | Notes |
+|---|---|---|
+| Partial-failure aggregation | **PASS (live)** | `mail batch flag` over 2 real IDs + 1 bogus → envelope `ok:true`, `message "2/3 succeeded"`, `summary {total:3, succeeded:2, failed:1}`, bogus item `E_NOT_FOUND`; no rollback of applied items |
+| Single-use confirm token replay | **PASS (live)** | re-submitting a consumed categorize token → `E_CONFLICT`, exit 6, hint "Re-run --dry-run and use the new confirm_token" |
+| `--dangerous` gating on delete | **PASS (live)** | both `mail batch --action delete` and `cal batch --action delete` require `--dangerous`; omitting it → `E_CONFIRMATION_REQUIRED`, exit 5 (verified for both) |
+
+### Bug found during this run
+
+- **`mail list --folder trash` crashes when the Deleted Items folder contains a
+  `CalendarItem`** — soft-deleting calendar events lands them in trash, after
+  which `mail list --folder trash` returns
+  `E_SERVER: 'CalendarItem' object has no attribute 'sender'`. The list path
+  assumes every trash item is a mail message and reads `.sender` unconditionally.
+  Worked around in this run by scoping with `mail search --folder trash`. The
+  batch commands themselves are unaffected; this is a pre-existing list-path gap
+  exposed by mixed-type Deleted Items. Not yet fixed.
+
 ## 2026-06-14 — v1.1.3 fixes (live)
 
 Re-run against the same real mailbox (in `read-only` permission mode this time):
