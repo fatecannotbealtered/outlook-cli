@@ -229,8 +229,9 @@ class TestSelfDescription:
         assert data["tool"] == "outlook-cli"
         assert data["schema_version"] == "1.0"
         assert data["risk_tier"] == "T1"
-        assert data["release_readiness"]["level"] == "stable"
-        assert data["release_readiness"]["live_smoke_status"] == "verified"
+        # Beta until the new batch commands have recorded live smoke evidence.
+        assert data["release_readiness"]["level"] == "beta"
+        assert data["release_readiness"]["live_smoke_status"] == "missing"
         assert data["security"]["untrusted_marker"] == "_untrusted"
         assert "commands" in data
         assert any(cmd["path"] == "update" for cmd in data["commands"])
@@ -254,8 +255,8 @@ class TestSelfDescription:
         checks = data_doc(stdout)["checks"]
         assert any(c["check"] == "version" for c in checks)
         readiness = next(c for c in checks if c["check"] == "release_readiness")
-        assert readiness["status"] == "pass"
-        assert readiness["details"]["level"] == "stable"
+        assert readiness["status"] == "warn"
+        assert readiness["details"]["level"] == "beta"
 
     def test_changelog(self):
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
