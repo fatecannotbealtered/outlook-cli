@@ -13,6 +13,19 @@ Recorded live smoke run against a real Exchange mailbox, as required by
   All mail was sent to the account owner itself; smoke emails were
   soft-deleted afterwards.
 
+## 2026-06-14 — v1.1.3 fixes (live)
+
+Re-run against the same real mailbox (in `read-only` permission mode this time):
+
+| Fix | Result | Notes |
+|---|---|---|
+| `context.credentials.valid` real probe | PASS | now reflects a live, cached authenticated touch — returned `valid:true, checked:true` (previously just copied `configured`) |
+| `mail search --sender` server-side filter | PASS | `--sender noreply` returned an accurate `total: 23` with `has_more` from a real `qs.count()`, not the misleading fetch-window count |
+| `mail read` inline images | PASS | response includes the `inline_images` list (cid/filename/content_type/size), separated from `attachments` |
+| `mail reply/reply-all/forward --attachments` cc+threading fix | unit-verified; **send not live-exercised** | the mailbox is in `read-only` mode (owner's safety setting), so `mail reply` correctly returns `E_FORBIDDEN`; the create_reply→attach→send ordering and cc/threading preservation are covered by 14 unit tests |
+
+The three read-path fixes are live-verified; the reply-attachments send fix is unit-verified (the live mailbox is intentionally read-only).
+
 ## Read path — all PASS
 
 | Command | Result | Notes |
