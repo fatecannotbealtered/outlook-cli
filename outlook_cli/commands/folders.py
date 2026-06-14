@@ -246,8 +246,9 @@ def folders_move(ctx, name, target):
 @click.pass_context
 def folders_empty(ctx, name, force):
     """Empty a mail folder (moves all items to trash)."""
-    from ..config import check_permission
+    from ..config import check_permission, require_dangerous
 
+    require_dangerous("folders empty")
     check_permission("folders empty")
 
     account = get_account()
@@ -285,8 +286,9 @@ def folders_empty(ctx, name, force):
 @click.pass_context
 def folders_delete(ctx, name, force):
     """Delete a mail folder."""
-    from ..config import check_permission
+    from ..config import check_permission, require_dangerous
 
+    require_dangerous("folders delete")
     check_permission("folders delete")
 
     account = get_account()
