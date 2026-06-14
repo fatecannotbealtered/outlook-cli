@@ -261,11 +261,11 @@ class TestSelfDescription:
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["current_version"] == "1.1.1"
+        assert data["current_version"] == "1.1.2"
         # Skip a pending [Unreleased] section; the newest *released* entry must
         # match the current version.
         released = [e for e in data["entries"] if e["version"].lower() != "unreleased"]
-        assert released[0]["version"] == "1.1.1"
+        assert released[0]["version"] == "1.1.2"
 
 
 class TestPermissionEnforcement:
