@@ -201,9 +201,19 @@ OUTPUT_SCHEMAS: dict[str, dict] = {
         "shape": "object",
         "fields": ["message", "subject", "categories"],
     },
+    # Batch result shape (CLI-SPEC §15.5): per-item items[] + summary. Each item
+    # carries the input `target` (subject for create, id for update/delete), `ok`,
+    # and on failure `error{code,retryable}`. The agent-supplied `target` echoes
+    # external input, so it is untrusted.
     "mail_batch_result": {
         "shape": "object",
-        "fields": ["message", "success", "total", "failed_ids", "results"],
+        "fields": ["message", "items", "summary"],
+        "untrusted_fields": ["items.target"],
+    },
+    "mail_draft_send_result": {
+        "shape": "object",
+        "fields": ["message", "items", "summary"],
+        "untrusted_fields": ["items.target"],
     },
     "mail_send_result": {
         "shape": "object",
@@ -258,6 +268,11 @@ OUTPUT_SCHEMAS: dict[str, dict] = {
     "cal_delete_result": {
         "shape": "object",
         "fields": ["message", "subject"],
+    },
+    "cal_batch_result": {
+        "shape": "object",
+        "fields": ["message", "items", "summary"],
+        "untrusted_fields": ["items.target"],
     },
     # --- folders ---
     "folders_list": {
@@ -473,7 +488,7 @@ COMMAND_SCHEMAS: dict[str, str] = {
     "mail drafts": "mail_drafts",
     "mail draft-read": "mail_draft_read",
     "mail draft-edit": "mail_draft_edit_result",
-    "mail draft-send": "mail_reply_result",
+    "mail draft-send": "mail_draft_send_result",
     "mail draft-delete": "mail_action_result",
     # calendar
     "cal list": "cal_list",
@@ -481,6 +496,7 @@ COMMAND_SCHEMAS: dict[str, str] = {
     "cal create": "cal_create_result",
     "cal update": "cal_update_result",
     "cal delete": "cal_delete_result",
+    "cal batch": "cal_batch_result",
     # folders
     "folders list": "folders_list",
     "folders create": "folders_create_result",
@@ -559,6 +575,11 @@ COMMAND_EXAMPLES: dict[str, list[str]] = {
     "mail batch": [
         "outlook-cli mail batch --ids <id1>,<id2> --action mark-read --dry-run --compact",
         "outlook-cli mail batch --ids <id1>,<id2> --action mark-read --confirm <token> --compact",
+        "outlook-cli mail batch --ids <id1> --ids <id2> --action categorize --categories Red"
+        " --dry-run --compact",
+        "outlook-cli mail batch --ids <id1>,<id2> --action delete --dangerous --dry-run --compact",
+        "outlook-cli mail batch --ids <id1>,<id2> --action delete --dangerous"
+        " --confirm <token> --compact",
     ],
     "mail delete": [
         "outlook-cli mail delete --id <mail_id> --dry-run --compact",
@@ -589,6 +610,8 @@ COMMAND_EXAMPLES: dict[str, list[str]] = {
     "mail draft-send": [
         "outlook-cli mail draft-send --id <draft_id> --dry-run --compact",
         "outlook-cli mail draft-send --id <draft_id> --confirm <token> --compact",
+        "outlook-cli mail draft-send --ids <id1>,<id2> --dry-run --compact",
+        "outlook-cli mail draft-send --ids <id1>,<id2> --confirm <token> --compact",
     ],
     "mail draft-delete": [
         "outlook-cli mail draft-delete --id <draft_id> --dry-run --compact",
@@ -610,6 +633,14 @@ COMMAND_EXAMPLES: dict[str, list[str]] = {
     "cal delete": [
         "outlook-cli cal delete --id <event_id> --dry-run --compact",
         "outlook-cli cal delete --id <event_id> --confirm <token> --compact",
+    ],
+    "cal batch": [
+        "outlook-cli cal batch --action create --file events.json --dry-run --compact",
+        "outlook-cli cal batch --action create --file events.json --confirm <token> --compact",
+        "outlook-cli cal batch --action update --file updates.json --confirm <token> --compact",
+        "outlook-cli cal batch --action delete --ids <id1>,<id2> --dangerous --dry-run --compact",
+        "outlook-cli cal batch --action delete --ids <id1>,<id2> --dangerous"
+        " --confirm <token> --compact",
     ],
     # folders
     "folders list": ["outlook-cli folders list --max-depth 3 --compact"],
