@@ -76,7 +76,8 @@
 - `error.message` 给人读，Agent 不应解析。
 - `error.details` 放结构化上下文，必须脱敏。
 - `error.retryable` 决定 Agent 是否可以自动退避重试。
-- `meta.duration_ms` 记录命令执行耗时。
+- `meta.duration_ms` 记录命令执行耗时。`meta` 在每个响应（成功与失败）里都要输出，
+  不要标 `omitempty`——`duration_ms: 0` 是合法值，agent 应当总能读到。
 - 破坏性 schema 变更必须升级 `schema_version` 主版本。
 
 ## 4. stdout / stderr 规则
@@ -131,6 +132,23 @@
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
 - `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §15.3 时）
+
+当错误来自上游 HTTP 调用时，按状态码映射到错误码，让 agent 能从 `error.code` +
+`retryable` 区分失败类型——不要把所有 4xx 都塌缩成 `E_NETWORK`：
+
+- `401` -> `E_AUTH`
+- `403` -> `E_FORBIDDEN`
+- `404` -> `E_NOT_FOUND`
+- `408` -> `E_TIMEOUT`（可重试）
+- `409` -> `E_CONFLICT`
+- `429` -> `E_RATE_LIMITED`（可重试）
+- `5xx` -> `E_SERVER`（可重试）
+- 连接拒绝 / DNS / 重置 -> `E_NETWORK`（可重试）
+
+优先按上游的错误类型/状态码映射，不要靠匹配人类可读的 message 文本（子串匹配会把仅仅
+包含「not found」等字样的消息误判）。把这套映射收敛到**一个**函数里，避免 output
+层与 command 层的 status->code->exit 契约漂移。声明了但运行时不可达的错误码应标注为
+保留，免得 agent 为不会发生的分支做规划。
 
 ## 7. 写操作流程（dry-run -> confirm）
 
@@ -197,6 +215,23 @@ confirm token 约定：
 }
 ```
 
+对基于 offset 的上游，回显 `offset` 并返回显式的 `next_offset`（下一页要传的值，
+仅在 `has_more` 为 true 时出现），让 agent 确定性翻页，而不必自己从 `offset + count`
+推导：
+
+```json
+{
+  "items": [],
+  "count": 0,
+  "offset": 0,
+  "next_offset": 20,
+  "has_more": true
+}
+```
+
+当列表被静默截断（例如自动翻页上限）时，要输出 `truncated: true`，而不是返回一个看起来
+完整、实则被截短的列表。
+
 约定：
 
 - 所有 ID 使用字符串，即使底层是数字。
@@ -208,10 +243,16 @@ confirm token 约定：
 
 写命令应尽量支持幂等语义：
 
-- 创建类命令建议支持 `--request-id` 或 `--idempotency-key`。
+- 创建类命令建议支持 `--request-id` 或 `--idempotency-key`。上游若支持幂等头（如 GitLab 的
+  `Idempotency-Key`），应转发该头，并把 key 绑进 confirm scope，使 token 只对该 key 生效。
 - 重试同一个 idempotency key 不应重复创建资源。
 - 更新/删除类命令应在 dry-run 中记录目标资源版本。
 - confirm 时发现版本变化必须返回 `E_CONFLICT`。
+- **confirm token 单次消费。** token 一旦被接受执行写操作，就记录其指纹（如
+  `~/.<tool>/confirm-consumed.json`，按过期裁剪），任何重放都以 `E_CONFLICT` 拒绝（「token 已用过，
+  请重新 `--dry-run`」）。这给 agent 安全重试语义：确认后超时的写不能盲目重发——重放被拒，重新
+  `--dry-run` 会显示当前真实状态。对于无资源版本可绑的上游，这是通用的安全重试机制。要在写执行**之前**
+  标记消费（中途崩溃宁可保守拒绝重放，也不冒重复风险）。存储失败要优雅降级，绝不阻塞写。
 - 批量写操作应返回逐项结果，不要因为单项失败隐藏其他项状态。
 
 批量写结果建议：
@@ -254,6 +295,13 @@ confirm token 约定：
 
 声明工具能力、命令、参数、输出 schema、错误码、权限等级，供 Agent 先理解能力。
 
+每个命令的 `output_schema` 必须可被机器使用，不能是占位 stub。用一个字符串 label 指向顶层
+`schemas` 目录里的条目：`{ "shape": "object"|"array", "fields": [...], "untrusted_fields": [...] }`，
+其中字段清单从命令真实返回的数据（flatten 结构 / `*ToMap` 构造）枚举，`untrusted_fields` 列出
+攻击者可控的键。每个命令还应带 `examples`：一条可直接运行的调用（写命令展示 `--dry-run` 再
+`--confirm` 这一对，危险命令带 `--dangerous`）。应有一个 guard 测试断言每个叶子命令都解析到非空
+schema 且至少有一条 example，使 `reference` 不会悄悄退化回 stub。
+
 ```json
 {
   "ok": true,
@@ -289,9 +337,20 @@ confirm token 约定：
             "multiple": false
           }
         ],
-        "output_schema": {}
+        "output_schema": "deleted_resource",
+        "examples": [
+          "<tool> resource delete <id> --dry-run --compact",
+          "<tool> resource delete <id> --confirm <confirm_token> --compact"
+        ]
       }
     ],
+    "schemas": {
+      "deleted_resource": {
+        "shape": "object",
+        "fields": ["id", "status"],
+        "untrusted_fields": []
+      }
+    },
     "exit_codes": {}
   },
   "meta": {
