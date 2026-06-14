@@ -78,7 +78,9 @@ Conventions:
 - `error.message` is for humans; agents should not parse it.
 - `error.details` holds structured context; must be redacted.
 - `error.retryable` tells the agent whether it may back off and retry automatically.
-- `meta.duration_ms` records command execution time.
+- `meta.duration_ms` records command execution time. `meta` is always emitted on
+  every response (success and error); do not mark it `omitempty`, since
+  `duration_ms: 0` is a valid value the agent should always be able to read.
 - A breaking schema change must bump the `schema_version` major version.
 
 ## 4. stdout / stderr rules
@@ -133,6 +135,26 @@ Error codes and exit codes must align:
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
 - `E_HUMAN_REQUIRED` -> 9 (optional, only when §15.3 is enabled)
+
+When the failure comes from an upstream HTTP call, map the status onto the
+taxonomy so the agent can tell failure modes apart from `error.code` +
+`retryable` — do NOT collapse every 4xx into `E_NETWORK`:
+
+- `401` -> `E_AUTH`
+- `403` -> `E_FORBIDDEN`
+- `404` -> `E_NOT_FOUND`
+- `408` -> `E_TIMEOUT` (retryable)
+- `409` -> `E_CONFLICT`
+- `429` -> `E_RATE_LIMITED` (retryable)
+- `5xx` -> `E_SERVER` (retryable)
+- connection refused / DNS / reset -> `E_NETWORK` (retryable)
+
+Map by the upstream's own error TYPE/status where available, not by sniffing
+the human-readable message text (substring matching misclassifies messages that
+merely contain words like "not found"). Keep this mapping in ONE function so the
+status->code->exit contract cannot drift between the output layer and the
+command layer. Codes that are declared but never reachable should be annotated
+as reserved so an agent does not plan for a branch that cannot occur.
 
 ## 7. Write flow (dry-run -> confirm)
 
@@ -199,6 +221,23 @@ Suggested pagination shape:
 }
 ```
 
+For offset-based upstreams, echo `offset` and return an explicit `next_offset`
+(the value to pass next, present only while `has_more` is true) so the agent
+pages deterministically instead of re-deriving `offset + count`:
+
+```json
+{
+  "items": [],
+  "count": 0,
+  "offset": 0,
+  "next_offset": 20,
+  "has_more": true
+}
+```
+
+When a list is silently capped (e.g. an auto-paginate ceiling), surface
+`truncated: true` rather than returning a short list that looks complete.
+
 Conventions:
 
 - All IDs are strings, even if numeric underneath.
@@ -210,10 +249,20 @@ Conventions:
 
 Write commands should support idempotent semantics where possible:
 
-- Create-type commands should support `--request-id` or `--idempotency-key`.
+- Create-type commands should support `--request-id` or `--idempotency-key`. Where the upstream
+  honors an idempotency header (e.g. GitLab's `Idempotency-Key`), forward it; bind the key into the
+  confirm scope so the token matches only that key.
 - Retrying the same idempotency key must not create duplicate resources.
 - Update/delete commands should record the target resource version during dry-run.
 - If a version change is detected at confirm time, return `E_CONFLICT`.
+- **Confirm tokens are single-use.** Once a token has been accepted to execute a write, record its
+  fingerprint (e.g. under `~/.<tool>/confirm-consumed.json`, pruned by expiry) and reject any replay
+  with `E_CONFLICT` ("token already used; re-run `--dry-run`"). This gives agents safe-retry: a
+  confirmed write that times out cannot be blindly re-sent — the retry is rejected and re-running
+  `--dry-run` reveals the now-current state. This is the universal safe-retry mechanism for upstreams
+  that expose no resource version to bind. Mark consumed BEFORE the write executes (a crash mid-write
+  conservatively blocks the replay rather than risking a duplicate). A storage failure must degrade
+  gracefully and never block the write.
 - Batch writes should return per-item results; don't hide other items' status because one failed.
 
 Suggested batch-write result:
@@ -256,6 +305,15 @@ Suggested batch-write result:
 
 Declares the tool's capabilities, commands, params, output schema, error codes, and permission levels, so an agent understands the tool first.
 
+Each command's `output_schema` MUST be machine-usable, not a stub. Use a string label that
+resolves to an entry in a top-level `schemas` catalog: `{ "shape": "object"|"array", "fields":
+[...], "untrusted_fields": [...] }`, with the field list enumerated from the command's actual
+returned data (the flatten structs / `*ToMap` builders) and `untrusted_fields` listing the
+attacker-controllable keys. Each command SHOULD also carry `examples`: one runnable invocation
+(write commands show the `--dry-run` then `--confirm` pair, dangerous commands include
+`--dangerous`). A guard test SHOULD assert every leaf command resolves to a non-empty schema and has
+at least one example, so `reference` cannot silently regress to a stub.
+
 ```json
 {
   "ok": true,
@@ -291,9 +349,20 @@ Declares the tool's capabilities, commands, params, output schema, error codes, 
             "multiple": false
           }
         ],
-        "output_schema": {}
+        "output_schema": "deleted_resource",
+        "examples": [
+          "<tool> resource delete <id> --dry-run --compact",
+          "<tool> resource delete <id> --confirm <confirm_token> --compact"
+        ]
       }
     ],
+    "schemas": {
+      "deleted_resource": {
+        "shape": "object",
+        "fields": ["id", "status"],
+        "untrusted_fields": []
+      }
+    },
     "exit_codes": {}
   },
   "meta": {
