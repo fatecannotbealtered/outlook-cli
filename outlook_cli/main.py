@@ -332,11 +332,14 @@ def _pagination_metadata(path: str, params: list[dict]) -> dict:
 
 
 def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[dict]:
+    from .schemas import COMMAND_EXAMPLES, COMMAND_SCHEMAS
+
     commands = []
     for name, command in sorted(group.commands.items()):
         path = (*prefix, name)
         path_str = " ".join(path)
         params = [_param_to_dict(p) for p in command.params if not getattr(p, "hidden", False)]
+        is_group = isinstance(command, click.Group)
         commands.append(
             {
                 "name": name,
@@ -344,15 +347,13 @@ def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[
                 "type": _command_type(path_str),
                 "help": command.get_short_help_str(limit=120),
                 "description": command.get_short_help_str(limit=120),
-                "output_schema": {
-                    "type": "object",
-                    "additionalProperties": True,
-                },
+                # Group commands have no payload of their own; leaf commands map
+                # to a schema label resolvable in the top-level `schemas` table.
+                "output_schema": None if is_group else COMMAND_SCHEMAS.get(path_str),
+                "examples": COMMAND_EXAMPLES.get(path_str, []),
                 "params": params,
                 "pagination": _pagination_metadata(path_str, params),
-                "children": _collect_commands(command, path)
-                if isinstance(command, click.Group)
-                else [],
+                "children": _collect_commands(command, path) if is_group else [],
             }
         )
     return commands
@@ -361,6 +362,8 @@ def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[
 @click.command("reference")
 def reference_cmd():
     """Describe CLI commands, parameters, schemas, and exit codes."""
+    from .schemas import OUTPUT_SCHEMAS
+
     data = {
         "tool": "outlook-cli",
         "version": __version__,
@@ -425,6 +428,7 @@ def reference_cmd():
             "8": "timeout",
         },
         "commands": _collect_commands(cli),
+        "schemas": OUTPUT_SCHEMAS,
     }
     output.print_json(data)
 
