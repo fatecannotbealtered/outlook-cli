@@ -25,16 +25,18 @@ for _stream in (sys.stdout, sys.stderr):
 
 SKILL_MIN_VERSION = "1.1.1"
 RELEASE_READINESS = {
-    "level": "stable",
+    "level": "beta",
     "fcc_required": True,
     "fcc_status": "verified",
     "mock_upstream_required": True,
     "mock_upstream_status": "verified",
     "live_smoke_required_for_stable": True,
-    "live_smoke_status": "verified",
+    "live_smoke_status": "missing",
     "reason": (
-        "FCC, mock upstream/contract tests, and recorded live smoke against a real "
-        "Exchange mailbox (2026-06-12, see docs/live-smoke-evidence.md) all passed."
+        "FCC and mock upstream/contract tests cover the new batch commands "
+        "(mail batch categorize/flag/restore, mail draft-send batch, cal batch "
+        "create/update/delete), but these have no recorded live smoke against a "
+        "real Exchange mailbox yet — beta until that evidence is recorded."
     ),
     "required_evidence": [
         "functional_contract_coverage_100",
@@ -340,12 +342,13 @@ def _pagination_metadata(path: str, params: list[dict]) -> dict:
 def _permission_tier(path: str) -> str | None:
     """Return the elevated permission tier for a command, or None.
 
-    `mail batch` is conditionally dangerous (only with --action delete), so it is
-    surfaced too — the caller still gates the flag on the action at runtime.
+    `mail batch` / `cal batch` are conditionally dangerous (only with --action
+    delete), so they are surfaced too — the caller still gates the flag on the
+    action at runtime.
     """
     from .config import DANGEROUS_COMMANDS
 
-    if path in DANGEROUS_COMMANDS or path == "mail batch":
+    if path in DANGEROUS_COMMANDS or path in {"mail batch", "cal batch"}:
         return "write-dangerous"
     return None
 
@@ -402,12 +405,16 @@ def reference_cmd():
         "permission_tiers": {
             "write-dangerous": (
                 "Irreversible / high-blast-radius writes (folders empty, folders delete, "
-                "mail batch with --action delete, tools oof set, tools oof disable). "
+                "mail batch with --action delete, cal batch with --action delete, "
+                "tools oof set, tools oof disable). "
                 "Require --dangerous in BOTH the --dry-run and --confirm steps; "
                 "missing --dangerous returns E_CONFIRMATION_REQUIRED (exit 5)."
             ),
         },
-        "dangerous_commands": sorted(DANGEROUS_COMMANDS | {"mail batch (when --action delete)"}),
+        "dangerous_commands": sorted(
+            DANGEROUS_COMMANDS
+            | {"mail batch (when --action delete)", "cal batch (when --action delete)"}
+        ),
         "security": {
             "untrusted_marker": "_untrusted",
             "external_content_rule": (
