@@ -48,6 +48,25 @@ def _item_id(item):
     return ""
 
 
+def _send_reply_with_attachments(account, reply, attachments) -> None:
+    """Send a reply/reply-all that carries extra file attachments.
+
+    A ReplyToItem/ReplyAllToItem has no .attach(), so we persist it to drafts to
+    materialize a real Message (which keeps the reference_item_id threading and
+    the recipients create_reply already resolved), re-fetch it, attach the extra
+    files, then send. Only the extra attachments differ from the plain reply.
+    """
+    from exchangelib import FileAttachment
+
+    save_result = reply.save(account.drafts)
+    draft = account.drafts.get(id=save_result.id, changekey=save_result.changekey)
+    for att_path in attachments:
+        with open(att_path, "rb") as f:
+            content = f.read()
+        draft.attach(FileAttachment(name=os.path.basename(att_path), content=content))
+    draft.send()
+
+
 def _confirm_item(command: str, item) -> None:
     from ..confirmation import require_confirmed
 
@@ -209,30 +228,19 @@ def mail_search(
         qs = qs.filter(to_recipients__contains=to_addr)
     if cc:
         qs = qs.filter(cc_recipients__contains=cc)
+    if sender:
+        # Server-side sender match so total/has_more/next_offset stay accurate
+        # for large result sets. icontains is a case-insensitive substring over
+        # the indexed sender mailbox (name + email_address), matching the intent
+        # of the old client-side filter without bounding it to a fetch window.
+        qs = qs.filter(sender__icontains=sender)
 
     qs = qs.order_by("-datetime_received")
 
-    # If sender filter is applied, we need client-side filtering.
-    # Fetch more items to compensate for filtering, then paginate the filtered results.
-    if sender:
-        _s = sender.lower()
-        # Fetch a larger batch to account for client-side filtering
-        fetch_limit = max(limit * 5, 100)
-        all_items = list(qs[:fetch_limit])
-        filtered = [
-            m
-            for m in all_items
-            if _s in (getattr(getattr(m, "sender", None), "email_address", "") or "").lower()
-            or _s in (getattr(getattr(m, "author", None), "email_address", "") or "").lower()
-        ]
-        total = len(filtered)
-        page = filtered[offset : offset + limit]
-        has_more = offset + limit < total
-    else:
-        total = qs.count()
-        raw = list(qs[offset : offset + limit + 1])
-        has_more = len(raw) > limit
-        page = raw[:limit]
+    total = qs.count()
+    raw = list(qs[offset : offset + limit + 1])
+    has_more = len(raw) > limit
+    page = raw[:limit]
 
     emails = [email_to_dict(m) for m in page]
     data = {
@@ -275,7 +283,21 @@ def mail_read(ctx, mail_id, mark_read):
         output.handle_error(f"Mail not found: {mail_id}", "NOT_FOUND", exit_code=4)
 
     attachments = []
+    inline_images = []
     for att in item.attachments or []:
+        # cid-referenced inline images are surfaced separately so an agent knows
+        # the body's `cid:` links resolve to real content; they stay out of the
+        # regular attachments list to mirror how mail clients hide them.
+        if getattr(att, "is_inline", False) and getattr(att, "content_id", None):
+            inline_images.append(
+                {
+                    "cid": att.content_id,
+                    "filename": att.name,
+                    "content_type": att.content_type,
+                    "size": att.size,
+                }
+            )
+            continue
         attachments.append(
             {
                 "name": att.name,
@@ -295,6 +317,7 @@ def mail_read(ctx, mail_id, mark_read):
         "has_attachments": bool(item.has_attachments),
         "body": item.text_body or "",
         "attachments": attachments,
+        "inline_images": inline_images,
         "_untrusted": [
             "subject",
             "sender",
@@ -302,6 +325,8 @@ def mail_read(ctx, mail_id, mark_read):
             "cc",
             "body",
             "attachments.name",
+            "inline_images.filename",
+            "inline_images.cid",
         ],
     }
 
@@ -1150,26 +1175,19 @@ def mail_reply(ctx, mail_id, body, html, attachments):
 
     _confirm_item("mail reply", item)
 
-    if attachments:
-        from exchangelib import FileAttachment, HTMLBody, Mailbox, Message
+    reply_subject = f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
 
+    if attachments:
+        from exchangelib import HTMLBody
+
+        # Build the reply through create_reply so threading (reference_item_id)
+        # and the original recipients match the no-attachment path. Save to
+        # drafts, re-fetch as a Message, attach the extra files, then send —
+        # ReplyToItem itself has no .attach(), only a saved draft does.
         msg_body = HTMLBody(body) if html else body
-        msg = Message(
-            account=account,
-            subject=f"Re: {item.subject}",
-            body=msg_body,
-            to_recipients=[Mailbox(email_address=item.sender.email_address)],
-            in_reply_to=item.message_id,
-        )
-        for att_path in attachments:
-            with open(att_path, "rb") as f:
-                content = f.read()
-            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
-        msg.send()
+        reply = item.create_reply(reply_subject, msg_body)
+        _send_reply_with_attachments(account, reply, attachments)
     else:
-        reply_subject = (
-            f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
-        )
         if html:
             from exchangelib import HTMLBody
 
@@ -1222,33 +1240,18 @@ def mail_reply_all(ctx, mail_id, body, html, attachments):
 
     _confirm_item("mail reply-all", item)
 
-    if attachments:
-        from exchangelib import FileAttachment, HTMLBody, Mailbox, Message
+    reply_subject = f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
 
+    if attachments:
+        from exchangelib import HTMLBody
+
+        # create_reply_all keeps threading and the sender+to+cc fan-out (minus
+        # the current user) identical to the no-attachment path; the saved
+        # draft is what carries the extra attachments before send.
         msg_body = HTMLBody(body) if html else body
-        all_recipients = []
-        if item.sender:
-            all_recipients.append(Mailbox(email_address=item.sender.email_address))
-        for m in item.to_recipients or []:
-            all_recipients.append(Mailbox(email_address=m.email_address))
-        for m in item.cc_recipients or []:
-            all_recipients.append(Mailbox(email_address=m.email_address))
-        msg = Message(
-            account=account,
-            subject=f"Re: {item.subject}",
-            body=msg_body,
-            to_recipients=list(set(all_recipients)),
-            in_reply_to=item.message_id,
-        )
-        for att_path in attachments:
-            with open(att_path, "rb") as f:
-                content = f.read()
-            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
-        msg.send()
+        reply = item.create_reply_all(reply_subject, msg_body)
+        _send_reply_with_attachments(account, reply, attachments)
     else:
-        reply_subject = (
-            f"Re: {item.subject}" if not item.subject.startswith("Re:") else item.subject
-        )
         if html:
             from exchangelib import HTMLBody
 
@@ -1301,38 +1304,20 @@ def mail_forward(ctx, mail_id, to_addr, body, html, attachments):
 
     _confirm_item("mail forward", item)
 
-    from exchangelib import FileAttachment, HTMLBody, Mailbox
+    from exchangelib import HTMLBody, Mailbox
 
     fwd_body = HTMLBody(body) if html else body
     fwd_subject = f"Fwd: {item.subject}"
     fwd_recipients = [Mailbox(email_address=a) for a in to_list]
 
     if attachments:
-        from exchangelib import Message
-
-        original_body = item.text_body or ""
-        sender = item.sender.email_address if item.sender else ""
-        combined = (
-            f"{body}\n\n"
-            "---------- Forwarded message ----------\n"
-            f"From: {sender}\n"
-            f"Subject: {item.subject}\n\n"
-            f"{original_body}"
+        # create_forward carries the original body and attachments server-side
+        # (the no-attachment path's item.forward() does the same), so we only
+        # add the extra files to the saved draft before sending.
+        forward = item.create_forward(
+            subject=fwd_subject, body=fwd_body, to_recipients=fwd_recipients
         )
-        msg_body = HTMLBody(combined) if html else combined
-        msg = Message(
-            account=account,
-            subject=fwd_subject,
-            body=msg_body,
-            to_recipients=fwd_recipients,
-        )
-        for att_path in attachments:
-            with open(att_path, "rb") as f:
-                content = f.read()
-            msg.attachments.append(FileAttachment(name=os.path.basename(att_path), content=content))
-        for orig_att in item.attachments or []:
-            msg.attachments.append(orig_att)
-        msg.send()
+        _send_reply_with_attachments(account, forward, attachments)
     else:
         item.forward(subject=fwd_subject, body=fwd_body, to_recipients=fwd_recipients)
 

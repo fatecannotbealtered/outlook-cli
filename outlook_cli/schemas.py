@@ -105,6 +105,7 @@ OUTPUT_SCHEMAS: dict[str, dict] = {
             "has_attachments",
             "body",
             "attachments",
+            "inline_images",
             "_untrusted",
         ],
         "untrusted_fields": [
@@ -114,6 +115,8 @@ OUTPUT_SCHEMAS: dict[str, dict] = {
             "cc",
             "body",
             "attachments.name",
+            "inline_images.filename",
+            "inline_images.cid",
         ],
     },
     "mail_stats": {

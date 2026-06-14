@@ -471,6 +471,22 @@ def context_cmd():
 
     cfg = load()
     configured = bool(cfg.get("email") and cfg.get("password"))
+
+    # Real (cheap, cached) credential probe — `valid` must reflect whether the
+    # credentials actually authenticate, not just that they're present. The
+    # probe never blocks beyond its short timeout and never raises.
+    if configured:
+        from .exchange import probe_credentials
+
+        probe = probe_credentials()
+        creds_valid = probe["valid"]
+        creds_reason = probe["reason"]
+        creds_checked = probe["checked"]
+    else:
+        creds_valid = False
+        creds_reason = "not configured"
+        creds_checked = False
+
     data = {
         "tool": "outlook-cli",
         "version": __version__,
@@ -487,7 +503,9 @@ def context_cmd():
         },
         "credentials": {
             "configured": configured,
-            "valid": configured,
+            "valid": creds_valid,
+            "checked": creds_checked,
+            "reason": creds_reason,
             "storage": cfg.get("password_storage", ""),
             "expires_at": "",
             "refreshable": False,
