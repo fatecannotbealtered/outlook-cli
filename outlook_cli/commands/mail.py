@@ -874,19 +874,105 @@ def mail_restore(ctx, mail_id, folder):
         output.success(data["message"])
 
 
+def _split_ids(raw_values) -> list[str]:
+    """Resolve a plural --ids flag into an ordered, de-duplicated id list.
+
+    Accepts both comma-separated (``--ids 1,2,3``) and repeatable
+    (``--ids 1 --ids 2``) forms, and mixes of the two. Input order is preserved
+    so the agent can zip ``items[]`` back to its inputs (batch contract §15.1).
+    """
+    seen: set[str] = set()
+    ordered: list[str] = []
+    for value in raw_values:
+        for part in str(value).split(","):
+            mid = part.strip()
+            if mid and mid not in seen:
+                seen.add(mid)
+                ordered.append(mid)
+    return ordered
+
+
+def _apply_batch_action(account, item, batch_action, folder, categories):
+    """Apply one batch action to one resolved item (single-item logic reuse)."""
+    if batch_action == "delete":
+        item.move_to_trash()
+    elif batch_action == "mark-read":
+        item.is_read = True
+        item.save(update_fields=["is_read"])
+    elif batch_action == "mark-unread":
+        item.is_read = False
+        item.save(update_fields=["is_read"])
+    elif batch_action == "move":
+        item.move(resolve_folder(account, folder))
+    elif batch_action == "restore":
+        item.move(resolve_folder(account, folder) if folder else account.inbox)
+    elif batch_action in ("flag", "unflag", "complete"):
+        _ensure_flag_field()
+        item.flag = {"flag": 2, "complete": 1, "unflag": None}[batch_action]
+        item.save(update_fields=["flag"])
+    elif batch_action == "categorize":
+        _apply_categorize(item, categories)
+
+
+def _ensure_flag_field() -> None:
+    """Register the extended Flag property on Message once (mirrors mail flag)."""
+    try:
+        from exchangelib import Flag as FlagProp
+    except ImportError:
+        from exchangelib.extended_properties import Flag as FlagProp
+    from exchangelib.items.message import Message
+
+    if not any(f.name == "flag" for f in Message.FIELDS):
+        Message.register("flag", FlagProp)
+
+
+def _apply_categorize(item, categories: str | None) -> None:
+    """Add categories on an item (batch categorize is add-only, like a label)."""
+    current = list(item.categories or [])
+    for c in (categories or "").split(","):
+        c = c.strip()
+        if c and c not in current:
+            current.append(c)
+    item.categories = current
+    item.save(update_fields=["categories"])
+
+
 @mail_group.command("batch")
-@click.option("--ids", required=True, help="Comma-separated mail IDs")
+@click.option("--ids", multiple=True, required=True, help="Mail IDs (comma-separated or repeated)")
 @click.option(
     "--action",
     "batch_action",
-    type=click.Choice(["delete", "mark-read", "mark-unread", "move"]),
+    type=click.Choice(
+        [
+            "delete",
+            "mark-read",
+            "mark-unread",
+            "move",
+            "categorize",
+            "flag",
+            "unflag",
+            "complete",
+            "restore",
+        ]
+    ),
     required=True,
 )
-@click.option("--folder", default=None, help="Target folder (required for move)")
+@click.option("--folder", default=None, help="Target folder (required for move; optional restore)")
+@click.option("--categories", default=None, help="Categories to add (required for categorize)")
+@click.option(
+    "--continue-on-error/--no-continue-on-error",
+    "continue_on_error",
+    default=True,
+    help="Keep going after an item fails (default: true)",
+)
 @click.option("--force", is_flag=True, help="Skip confirmation")
 @click.pass_context
-def mail_batch(ctx, ids, batch_action, folder, force):
-    """Batch operations on multiple emails."""
+def mail_batch(ctx, ids, batch_action, folder, categories, continue_on_error, force):
+    """Batch operations on multiple emails.
+
+    One command, one confirm token, one aggregated items[]/summary result.
+    Per-item failures do not roll back already-applied items.
+    """
     from ..config import check_permission, require_dangerous
 
     # Batch delete is the only irreversible/high-blast batch action — gate it
@@ -897,12 +983,18 @@ def mail_batch(ctx, ids, batch_action, folder, force):
 
     check_permission("mail batch")
 
-    id_list = [i.strip() for i in ids.split(",") if i.strip()]
+    id_list = _split_ids(ids)
     if not id_list:
         output.handle_error("No mail IDs provided", "VALIDATION_ERROR", exit_code=2)
     if batch_action == "move" and not folder:
         output.handle_error(
             "--folder is required when --action move",
+            "VALIDATION_ERROR",
+            exit_code=2,
+        )
+    if batch_action == "categorize" and not (categories and categories.strip()):
+        output.handle_error(
+            "--categories is required when --action categorize",
             "VALIDATION_ERROR",
             exit_code=2,
         )
@@ -912,13 +1004,13 @@ def mail_batch(ctx, ids, batch_action, folder, force):
             click.confirm(f"Delete {len(id_list)} email(s)?", abort=True)
 
     if ctx.obj.get("dry_run"):
-        items = []
         account = get_account()
+        targets = []
         for mid in id_list:
             item = find_mail_by_id(account, mid)
-            items.append(
+            targets.append(
                 {
-                    "id": mid,
+                    "target": mid,
                     "exists": bool(item),
                     "resource_version": item_version(item) if item else "",
                 }
@@ -927,11 +1019,12 @@ def mail_batch(ctx, ids, batch_action, folder, force):
             "Batch operation",
             {
                 "action": batch_action,
-                "count": len(id_list),
-                "items": items,
+                "total": len(id_list),
+                "targets": [t["target"] for t in targets],
+                "items": targets,
             },
             resource_id=",".join(id_list),
-            resource_version=";".join(i["resource_version"] for i in items),
+            resource_version=";".join(t["resource_version"] for t in targets),
         )
         return
 
@@ -949,65 +1042,56 @@ def mail_batch(ctx, ids, batch_action, folder, force):
         resource_version=";".join(version for _, _, version in preflight),
     )
 
-    success_count = 0
-    results = []
-    for mid, item, version in preflight:
+    items = []
+    stopped = False
+    for mid, item, _version in preflight:
+        if stopped:
+            items.append({"target": mid, "ok": None, "status": "skipped"})
+            continue
         if not item:
-            results.append(
+            items.append(
                 {
-                    "id": mid,
+                    "target": mid,
                     "ok": False,
-                    "status": "not_found",
-                    "resource_version": version,
-                    "error": "mail not found",
+                    "error": {"code": "E_NOT_FOUND", "retryable": False},
                 }
             )
+            if not continue_on_error:
+                stopped = True
             continue
         try:
-            if batch_action == "delete":
-                item.move_to_trash()
-            elif batch_action == "mark-read":
-                item.is_read = True
-                item.save(update_fields=["is_read"])
-            elif batch_action == "mark-unread":
-                item.is_read = False
-                item.save(update_fields=["is_read"])
-            elif batch_action == "move" and folder:
-                target = resolve_folder(account, folder)
-                item.move(target)
-            success_count += 1
-            results.append(
-                {
-                    "id": mid,
-                    "ok": True,
-                    "status": "applied",
-                    "resource_version": version,
-                }
-            )
+            _apply_batch_action(account, item, batch_action, folder, categories)
+            items.append({"target": mid, "ok": True})
         except Exception as exc:
-            results.append(
+            code = output._api_error_code_from_type(exc) or "E_SERVER"
+            items.append(
                 {
-                    "id": mid,
+                    "target": mid,
                     "ok": False,
-                    "status": "failed",
-                    "resource_version": version,
-                    "error": str(exc),
+                    "error": {"code": code, "retryable": code in output.RETRYABLE_ERRORS},
                 }
             )
+            if not continue_on_error:
+                stopped = True
+
+    succeeded = sum(1 for i in items if i["ok"] is True)
+    failed = sum(1 for i in items if i["ok"] is False)
+    skipped = sum(1 for i in items if i["ok"] is None)
+    summary = {"total": len(id_list), "succeeded": succeeded, "failed": failed}
+    if skipped:
+        summary["skipped"] = skipped
 
     data = {
-        "message": f"Batch {batch_action}: {success_count}/{len(id_list)} succeeded",
-        "success": success_count,
-        "total": len(id_list),
-        "failed_ids": [r["id"] for r in results if not r["ok"]],
-        "results": results,
+        "message": f"Batch {batch_action}: {succeeded}/{len(id_list)} succeeded",
+        "items": items,
+        "summary": summary,
     }
 
     if output.is_json():
         output.print_json(data)
     else:
         output.success(data["message"])
-        failed_ids = data["failed_ids"]
+        failed_ids = [i["target"] for i in items if i["ok"] is False]
         if failed_ids:
             output.warn(f"  Failed IDs: {', '.join(failed_ids)}")
 
@@ -1487,44 +1571,150 @@ def mail_draft_edit(ctx, mail_id, subject, body, html, to_addr, cc, bcc, attachm
         output.success(data["message"])
 
 
+def _send_error_item(target: str, exc: Exception) -> dict:
+    """Map a send exception to a contract per-item failure entry."""
+    code = output._api_error_code_from_type(exc) or "E_SERVER"
+    return {
+        "target": target,
+        "ok": False,
+        "error": {"code": code, "retryable": code in output.RETRYABLE_ERRORS},
+    }
+
+
+def _bulk_send_drafts(account, preflight, continue_on_error) -> list[dict]:
+    """Send resolved drafts and aggregate per-item results (contract §15.5).
+
+    ``continue_on_error`` true uses a single native ``bulk_send`` over every
+    resolved draft (true server-side batch). False short-circuits on the first
+    failure, leaving already-sent drafts sent and the remainder reported as
+    skipped, so the agent can resume.
+    """
+    if continue_on_error:
+        existing = [item for _, item, _ in preflight if item]
+        results = iter(account.bulk_send(existing) if existing else [])
+        items = []
+        for did, item, _ in preflight:
+            if not item:
+                items.append(
+                    {
+                        "target": did,
+                        "ok": False,
+                        "error": {"code": "E_NOT_FOUND", "retryable": False},
+                    }
+                )
+                continue
+            result = next(results)
+            items.append(
+                _send_error_item(did, result)
+                if isinstance(result, Exception)
+                else {"target": did, "ok": True}
+            )
+        return items
+
+    # Stop-on-first-failure: attempt one at a time so the remainder stays unsent.
+    items = []
+    stopped = False
+    for did, item, _ in preflight:
+        if stopped:
+            items.append({"target": did, "ok": None, "status": "skipped"})
+            continue
+        if not item:
+            items.append(
+                {"target": did, "ok": False, "error": {"code": "E_NOT_FOUND", "retryable": False}}
+            )
+            stopped = True
+            continue
+        result = account.bulk_send([item])[0]
+        if isinstance(result, Exception):
+            items.append(_send_error_item(did, result))
+            stopped = True
+        else:
+            items.append({"target": did, "ok": True})
+    return items
+
+
 @mail_group.command("draft-send")
-@click.option("--id", "mail_id", required=True)
+@click.option("--id", "mail_id", default=None, help="Single draft ID (batch of one)")
+@click.option("--ids", multiple=True, help="Draft IDs (comma-separated or repeated)")
+@click.option(
+    "--continue-on-error/--no-continue-on-error",
+    "continue_on_error",
+    default=True,
+    help="Keep going after an item fails (default: true)",
+)
 @click.pass_context
-def mail_draft_send(ctx, mail_id):
-    """Send a draft. Requires dry-run/confirm."""
+def mail_draft_send(ctx, mail_id, ids, continue_on_error):
+    """Send one or more drafts. Requires dry-run/confirm.
+
+    Native batch via account.bulk_send; a single --id is a batch of one with the
+    same envelope. One confirm token covers the whole batch (contract §15).
+    """
     from ..config import check_permission
 
     check_permission("mail draft-send")
 
+    id_list = _split_ids((*ids, mail_id) if mail_id else ids)
+    if not id_list:
+        output.handle_error(
+            "No draft IDs provided (use --id or --ids)", "VALIDATION_ERROR", exit_code=2
+        )
+
     account = get_account()
-    item = find_mail_by_id(account, mail_id)
-    if not item:
-        output.handle_error(f"Draft not found: {mail_id}", "NOT_FOUND", exit_code=4)
+    preflight = []
+    for did in id_list:
+        item = find_mail_by_id(account, did)
+        preflight.append((did, item, item_version(item) if item else ""))
 
     if ctx.obj.get("dry_run"):
         output.dry_run_output(
-            "Send draft",
+            "Send drafts",
             {
-                "id": mail_id,
-                "subject": item.subject,
-                "to": [m.email_address for m in (item.to_recipients or [])],
-                "cc": [m.email_address for m in (item.cc_recipients or [])],
-                "bcc": [m.email_address for m in (item.bcc_recipients or [])],
+                "action": "draft-send",
+                "total": len(id_list),
+                "targets": id_list,
+                "items": [
+                    {
+                        "target": did,
+                        "exists": bool(item),
+                        "subject": item.subject if item else "",
+                    }
+                    for did, item, _ in preflight
+                ],
             },
-            resource_id=_item_id(item),
-            resource_version=item_version(item),
+            resource_id=",".join(id_list),
+            resource_version=";".join(v for _, _, v in preflight),
         )
         return
 
-    _confirm_item("mail draft-send", item)
+    from ..confirmation import require_confirmed
 
-    subject = item.subject
-    item.send()
-    data = {"message": "Draft sent", "subject": subject, "sent": True}
+    require_confirmed(
+        "mail draft-send",
+        resource_id=",".join(id_list),
+        resource_version=";".join(v for _, _, v in preflight),
+    )
+
+    items = _bulk_send_drafts(account, preflight, continue_on_error)
+
+    succeeded = sum(1 for i in items if i["ok"] is True)
+    failed = sum(1 for i in items if i["ok"] is False)
+    skipped = sum(1 for i in items if i["ok"] is None)
+    summary = {"total": len(id_list), "succeeded": succeeded, "failed": failed}
+    if skipped:
+        summary["skipped"] = skipped
+
+    data = {
+        "message": f"Drafts sent: {succeeded}/{len(id_list)} succeeded",
+        "items": items,
+        "summary": summary,
+    }
     if output.is_json():
         output.print_json(data)
     else:
         output.success(data["message"])
+        failed_ids = [i["target"] for i in items if i["ok"] is False]
+        if failed_ids:
+            output.warn(f"  Failed IDs: {', '.join(failed_ids)}")
 
 
 @mail_group.command("draft-delete")
