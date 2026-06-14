@@ -5,6 +5,21 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] - 2026-06-14
+
+### Added
+
+- `mail read` now surfaces inline (cid) images in an `inline_images` list, separated from attachments.
+- T2 `--dangerous` second gate (both dry-run and confirm) for `folders empty`, `folders delete`, `mail batch --action delete`, `tools oof set`, `tools oof disable`.
+- `reference` now exposes a real per-command `output_schema` + `examples[]`, guarded against regression.
+
+### Changed
+
+- Confirm tokens are now single-use (E_CONFLICT on replay) and bind the item `changekey` as resource version where available.
+- `mail reply`/`reply-all`/`forward --attachments` now preserve recipients (cc), `In-Reply-To` threading, and original attachments.
+- `mail search --sender` filters server-side, so `total`/`has_more` are accurate for large result sets.
+- `context.credentials.valid` now reflects a cached real credential probe instead of copying `configured`.
+
 ## [1.1.2] - 2026-06-14
 
 ### Added
