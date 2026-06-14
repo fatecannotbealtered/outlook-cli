@@ -25,18 +25,25 @@ for _stream in (sys.stdout, sys.stderr):
 
 SKILL_MIN_VERSION = "1.1.1"
 RELEASE_READINESS = {
-    "level": "beta",
+    "level": "stable",
     "fcc_required": True,
     "fcc_status": "verified",
     "mock_upstream_required": True,
     "mock_upstream_status": "verified",
     "live_smoke_required_for_stable": True,
-    "live_smoke_status": "missing",
+    "live_smoke_status": "recorded",
     "reason": (
-        "FCC and mock upstream/contract tests cover the new batch commands "
-        "(mail batch categorize/flag/restore, mail draft-send batch, cal batch "
-        "create/update/delete), but these have no recorded live smoke against a "
-        "real Exchange mailbox yet — beta until that evidence is recorded."
+        "FCC + mock upstream/contract tests and a recorded live smoke (2026-06-15, "
+        "docs/live-smoke-evidence.md) cover the batch commands. All were live-verified "
+        "against a real Exchange mailbox on reversible 2-3 object batches with full "
+        "cleanup: mail batch categorize/flag/unflag/restore/delete, mail draft-send "
+        "(native bulk_send), cal batch create/delete (mail batch complete and cal batch "
+        "update validated via dry-run + contract tests). Contract points confirmed live: "
+        "partial-failure aggregation, single-use confirm-token replay (E_CONFLICT), and "
+        "--dangerous gating (exit 5) on both delete actions. Known unrelated defect: "
+        "'mail list --folder trash' raises E_SERVER when Deleted Items holds a "
+        "CalendarItem (list path reads .sender unconditionally); does not affect the "
+        "batch commands and is tracked separately."
     ),
     "required_evidence": [
         "functional_contract_coverage_100",
