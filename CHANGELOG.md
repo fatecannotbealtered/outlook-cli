@@ -5,6 +5,20 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- `cal get --id <event_id>` — a first-class single-event read returning the same flattened, `_untrusted`-tagged shape as `cal list` items, so an agent can read one event without re-scanning a list.
+
+### Changed
+
+- `handle_api_error` now classifies failures by exception **type** (and its base classes) first — `ErrorServerBusy`/`RateLimitError` → `E_RATE_LIMITED`, `ErrorItemNotFound`/`ErrorFolderNotFound` → `E_NOT_FOUND`, timeouts → `E_TIMEOUT`, etc. — and only falls back to message-substring sniffing for unmapped errors. This makes `E_RATE_LIMITED`/`E_TIMEOUT` reachable and stops misclassifying messages that merely contain words like "not found".
+
+### Fixed
+
+- The error envelope and `print_flat_json` now honor the global `--compact` flag instead of hard-coding compact JSON, so the same command produces consistent whitespace on success and error.
+
 ## [1.1.1] - 2026-06-12
 
 ### Added

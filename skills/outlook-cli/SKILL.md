@@ -176,6 +176,7 @@ outlook-cli mail draft-send --id "<draft_id>" --confirm <confirm_token> --compac
 
 ```bash
 outlook-cli cal list --days 7 --compact
+outlook-cli cal get --id <event_id> --compact   # read one event by id (same shape as a list item)
 ```
 
 ### Create A Meeting

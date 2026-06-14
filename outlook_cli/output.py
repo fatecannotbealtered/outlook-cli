@@ -252,9 +252,14 @@ def print_json(data: Any, meta: dict[str, Any] | None = None) -> None:
 
 
 def print_flat_json(data: dict, meta: dict[str, Any] | None = None) -> None:
-    """Print compact JSON success envelope to stdout."""
+    """Print a JSON success envelope to stdout, honoring the global --compact flag.
+
+    Whitespace must not differ between this and the normal success path, so the
+    same command produces the same shape on success regardless of which printer
+    it uses.
+    """
     if is_json():
-        _dump_json(success_envelope(data, meta=meta), compact=True)
+        _dump_json(success_envelope(data, meta=meta))
     else:
         print_json(data, meta=meta)
 
@@ -283,10 +288,9 @@ def error_json(
         error_details.setdefault("hint", hint)
     elif semantic in ERROR_HINTS:
         error_details.setdefault("hint", ERROR_HINTS[semantic])
-    _dump_json(
-        error_envelope(msg, semantic, details=error_details, retryable=retryable),
-        compact=True,
-    )
+    # Honor the global --compact flag (default pretty) so the error envelope's
+    # whitespace matches the success envelope for the same invocation.
+    _dump_json(error_envelope(msg, semantic, details=error_details, retryable=retryable))
     if not _quiet:
         print(f"{semantic}: {msg}", file=sys.stderr)
 
@@ -362,21 +366,63 @@ def handle_error(
     sys.exit(resolved_exit)
 
 
+# Map exchangelib / requests exception class names to error codes. Matching on
+# the exception TYPE (incl. its MRO) is more reliable than sniffing the message
+# text, which can misclassify (e.g. a body that happens to contain "not found").
+# Keyed by class name so this module stays decoupled from exchangelib's import
+# surface and version-specific class availability.
+_API_ERROR_TYPE_CODES = {
+    "ErrorServerBusy": "E_RATE_LIMITED",
+    "RateLimitError": "E_RATE_LIMITED",
+    "ErrorTooManyObjectsOpened": "E_RATE_LIMITED",
+    "ErrorItemNotFound": "E_NOT_FOUND",
+    "ErrorFolderNotFound": "E_NOT_FOUND",
+    "ErrorNonExistentMailbox": "E_NOT_FOUND",
+    "UnauthorizedError": "E_AUTH",
+    "ErrorAccessDenied": "E_FORBIDDEN",
+    "ErrorTimeoutExpired": "E_TIMEOUT",
+    "Timeout": "E_TIMEOUT",
+    "ReadTimeout": "E_TIMEOUT",
+    "ConnectTimeout": "E_TIMEOUT",
+    "ConnectionError": "E_NETWORK",
+    "TransportError": "E_NETWORK",
+}
+
+
+def _api_error_code_from_type(exc: Exception) -> str | None:
+    """Return an error code by matching the exception type (and its bases)."""
+    for base in type(exc).__mro__:
+        code = _API_ERROR_TYPE_CODES.get(base.__name__)
+        if code is not None:
+            return code
+    return None
+
+
 def handle_api_error(exc: Exception, exit_code: int | None = None) -> None:
-    """Handle Exchange/API errors."""
+    """Handle Exchange/API errors, classifying by exception type first."""
     msg = str(exc)
-    code = "E_SERVER"
-    lower_msg = msg.lower()
-    if "auth" in lower_msg or "401" in msg or "unauthorized" in lower_msg:
-        code = "E_AUTH"
-    elif "not found" in lower_msg or "404" in msg:
-        code = "E_NOT_FOUND"
-    elif "forbidden" in lower_msg or "403" in msg:
-        code = "E_FORBIDDEN"
-    elif "timeout" in lower_msg:
-        code = "E_TIMEOUT"
-    elif "connect" in lower_msg and "disconnect" not in lower_msg and "reconnect" not in lower_msg:
-        code = "E_NETWORK"
+    code = _api_error_code_from_type(exc)
+    if code is None:
+        # Fallback substring sniffing for exceptions we don't map by type.
+        lower_msg = msg.lower()
+        if "auth" in lower_msg or "401" in msg or "unauthorized" in lower_msg:
+            code = "E_AUTH"
+        elif "not found" in lower_msg or "404" in msg:
+            code = "E_NOT_FOUND"
+        elif "forbidden" in lower_msg or "403" in msg:
+            code = "E_FORBIDDEN"
+        elif "throttl" in lower_msg or "429" in msg or "too many request" in lower_msg:
+            code = "E_RATE_LIMITED"
+        elif "timeout" in lower_msg or "timed out" in lower_msg:
+            code = "E_TIMEOUT"
+        elif (
+            "connect" in lower_msg
+            and "disconnect" not in lower_msg
+            and "reconnect" not in lower_msg
+        ):
+            code = "E_NETWORK"
+        else:
+            code = "E_SERVER"
     handle_error(msg, code, exit_code=exit_code)
 
 

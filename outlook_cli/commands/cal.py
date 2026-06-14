@@ -158,6 +158,33 @@ def cal_list(ctx, start_date, end_date, days, subject, limit, offset):
         output.info(f"--- {len(page)} / {total} events ---")
 
 
+@cal_group.command("get")
+@click.option("--id", "event_id", required=True, help="Event ID from cal list")
+@click.option("--changekey", default="", help="Changekey (from cal list, improves lookup)")
+@click.pass_context
+def cal_get(ctx, event_id, changekey):
+    """Get a single calendar event by ID (returns the same shape as cal list items)."""
+    from ..config import check_permission
+
+    check_permission("cal get")
+
+    account = get_account()
+    item = _get_event(account, event_id, changekey)
+    if not item:
+        output.handle_error(f"Event not found: {event_id}", "NOT_FOUND", exit_code=3)
+
+    event = _event_to_dict(item)
+    if output.is_json():
+        output.print_json(event)
+    else:
+        time_str = f"{event['start']} ~ {event['end']}" if event["end"] else event["start"]
+        output.info(f"  [{event['id'][:8]}] {time_str}  {event['subject']}")
+        if event["location"]:
+            output.gray(f"    Location: {event['location']}")
+        if event["organizer"]:
+            output.gray(f"    Organizer: {event['organizer']}")
+
+
 @cal_group.command("create")
 @click.option("--subject", required=True, help="Event subject")
 @click.option("--start", required=True, help="Start time YYYY-MM-DD HH:MM")

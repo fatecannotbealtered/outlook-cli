@@ -698,6 +698,16 @@ class TestStep4CalendarRoundTrip:
         assert len(events) >= 1
         self.__class__._event_id = events[0]["id"]
 
+    def test_02b_get(self):
+        """[cal get]"""
+        eid = self.__class__._event_id
+        if not eid:
+            pytest.skip("event not created")
+        data = get_json("cal", "get", "--id", eid)
+        assert data["id"] == eid
+        assert self.SUBJECT in data.get("subject", "")
+        assert "subject" in data.get("_untrusted", [])
+
     def test_03_update(self):
         """[cal update]"""
         eid = self.__class__._event_id
