@@ -320,9 +320,7 @@ def test_mail_read_surfaces_inline_images(monkeypatch):
     item.id = "item-1"
     item.attachments = [
         FakeAttachment("report.pdf", content_type="application/pdf"),
-        FakeAttachment(
-            "logo.png", content_type="image/png", is_inline=True, content_id="logo.png"
-        ),
+        FakeAttachment("logo.png", content_type="image/png", is_inline=True, content_id="logo.png"),
     ]
 
     monkeypatch.setattr("outlook_cli.config.check_permission", lambda *_a, **_k: None)

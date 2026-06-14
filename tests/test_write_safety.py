@@ -191,17 +191,13 @@ def test_resource_version_binds_and_mismatch_rejected(isolate_home):
     valid, _ = confirmation.validate_token(token, resource_id="evt-1", resource_version="v1")
     assert valid is True
     # A changed version (someone else edited the item) is rejected.
-    valid, reason = confirmation.validate_token(
-        token, resource_id="evt-1", resource_version="v2"
-    )
+    valid, reason = confirmation.validate_token(token, resource_id="evt-1", resource_version="v2")
     assert valid is False
     assert "operation" in reason
 
 
 def test_resource_id_mismatch_rejected(isolate_home):
     token, _ = confirmation.issue_token(resource_id="evt-1", resource_version="v1")
-    valid, reason = confirmation.validate_token(
-        token, resource_id="evt-2", resource_version="v1"
-    )
+    valid, reason = confirmation.validate_token(token, resource_id="evt-2", resource_version="v1")
     assert valid is False
     assert "resource" in reason
