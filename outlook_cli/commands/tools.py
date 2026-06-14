@@ -476,8 +476,9 @@ def tools_oof_get(ctx):
 @click.pass_context
 def tools_oof_set(ctx, message, external_message, start, end):
     """Enable auto-reply (Out of Office). Requires dry-run/confirm."""
-    from ..config import check_permission
+    from ..config import check_permission, require_dangerous
 
+    require_dangerous("tools oof set")
     check_permission("tools oof set")
 
     tz = get_tz()
@@ -530,8 +531,9 @@ def tools_oof_set(ctx, message, external_message, start, end):
 @click.pass_context
 def tools_oof_disable(ctx):
     """Disable auto-reply (Out of Office). Requires dry-run/confirm."""
-    from ..config import check_permission
+    from ..config import check_permission, require_dangerous
 
+    require_dangerous("tools oof disable")
     check_permission("tools oof disable")
 
     if ctx.obj.get("dry_run"):

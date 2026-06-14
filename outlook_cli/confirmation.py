@@ -32,6 +32,80 @@ def _secret_path() -> Path:
     return config_dir() / "confirm.secret"
 
 
+def _consumed_path() -> Path:
+    from .config import config_dir
+
+    return config_dir() / "confirm-consumed.json"
+
+
+def _token_fingerprint(token: str) -> str:
+    """Short, non-reversible id for a confirm token (first 16 hex of sha256)."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()[:16]
+
+
+def _load_consumed(path: Path, now_epoch: int) -> dict[str, int]:
+    """Load consumed-token fingerprints, dropping any past their expiry."""
+    try:
+        stored = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    if not isinstance(stored, dict):
+        return {}
+    # Prune expired entries so the file cannot grow without bound.
+    return {fp: exp for fp, exp in stored.items() if isinstance(exp, int) and exp > now_epoch}
+
+
+def is_consumed(token: str) -> bool:
+    """Report whether this confirm token has already driven a write.
+
+    Best effort: a storage read failure does not block the operation (we cannot
+    prove the token was used, so we let it proceed rather than wedge the agent).
+    """
+    now_epoch = int(datetime.now(timezone.utc).timestamp())
+    consumed = _load_consumed(_consumed_path(), now_epoch)
+    return _token_fingerprint(token) in consumed
+
+
+def mark_consumed(token: str, exp: int) -> None:
+    """Record a confirm token as used until its expiry.
+
+    Best effort: storage failure must not block the write — single-use simply
+    cannot be guaranteed on that host (caller warns).
+    """
+    import sys
+
+    now_epoch = int(datetime.now(timezone.utc).timestamp())
+    path = _consumed_path()
+    try:
+        consumed = _load_consumed(path, now_epoch)
+        consumed[_token_fingerprint(token)] = int(exp)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps(consumed, separators=(",", ":")),
+            encoding="utf-8",
+        )
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except OSError as exc:
+        print(
+            f"Warning: could not record single-use confirm token ({exc}); "
+            "single-use protection unavailable on this host.",
+            file=sys.stderr,
+        )
+
+
+def _token_exp(token: str) -> int:
+    """Extract the token's expiry epoch, or 0 if it cannot be parsed."""
+    try:
+        _, payload_raw, _ = token.split("_", 2)
+        payload = json.loads(_unb64(payload_raw).decode("utf-8"))
+        return int(payload.get("exp", 0))
+    except Exception:
+        return 0
+
+
 def _load_secret() -> bytes:
     path = _secret_path()
     if path.exists():
@@ -291,3 +365,15 @@ def require_confirmed(
             "E_CONFLICT",
             details={"command": command, "reason": reason},
         )
+
+    # Single-use: a confirmed write that timed out must not be blindly replayed.
+    # Reject a token already accepted for a write, then mark this one consumed
+    # BEFORE the write runs so a crash mid-write still burns the token.
+    if is_consumed(token):
+        output.handle_error(
+            "confirm token already used; the operation may have completed — "
+            "re-run --dry-run to see current state",
+            "E_CONFLICT",
+            details={"command": command, "reason": "confirm token already used"},
+        )
+    mark_consumed(token, _token_exp(token))

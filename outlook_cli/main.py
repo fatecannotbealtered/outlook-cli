@@ -48,7 +48,7 @@ _start_time: float = 0
 _exit_code: int = 0
 
 # Global flags that work at any position (before or after subcommand)
-_GLOBAL_BOOL_FLAGS = {"--json", "--quiet", "--dry-run", "--compact"}
+_GLOBAL_BOOL_FLAGS = {"--json", "--quiet", "--dry-run", "--compact", "--dangerous"}
 _GLOBAL_VALUE_FLAGS = {"--format", "--fields", "--confirm", "--account"}
 
 
@@ -107,8 +107,13 @@ class FlexibleGroup(click.Group):
 @click.option("--dry-run", is_flag=True, help="Preview write operations without executing")
 @click.option("--confirm", default=None, help="Confirm token from --dry-run")
 @click.option("--account", default=None, help="Shared mailbox email (delegate access)")
+@click.option(
+    "--dangerous",
+    is_flag=True,
+    help="Acknowledge irreversible/high-blast writes (required for dangerous commands)",
+)
 @click.pass_context
-def cli(ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, account):
+def cli(ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, account, dangerous):
     """Outlook Exchange CLI for AI Agents.
 
     Manage email, calendar, folders, rules, and contacts through a machine-readable contract.
@@ -125,6 +130,7 @@ def cli(ctx, format_mode, json_alias, fields, compact, quiet, dry_run, confirm, 
     ctx.obj["dry_run"] = dry_run
     ctx.obj["confirm"] = confirm
     ctx.obj["account"] = account
+    ctx.obj["dangerous"] = dangerous
     ctx.obj["fields"] = fields
     ctx.obj["compact"] = compact
 
@@ -331,6 +337,19 @@ def _pagination_metadata(path: str, params: list[dict]) -> dict:
     return {"supported": False, "reason": "not a list-style command"}
 
 
+def _permission_tier(path: str) -> str | None:
+    """Return the elevated permission tier for a command, or None.
+
+    `mail batch` is conditionally dangerous (only with --action delete), so it is
+    surfaced too — the caller still gates the flag on the action at runtime.
+    """
+    from .config import DANGEROUS_COMMANDS
+
+    if path in DANGEROUS_COMMANDS or path == "mail batch":
+        return "write-dangerous"
+    return None
+
+
 def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[dict]:
     from .schemas import COMMAND_EXAMPLES, COMMAND_SCHEMAS
 
@@ -345,6 +364,7 @@ def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[
                 "name": name,
                 "path": path_str,
                 "type": _command_type(path_str),
+                "permission_tier": _permission_tier(path_str),
                 "help": command.get_short_help_str(limit=120),
                 "description": command.get_short_help_str(limit=120),
                 # Group commands have no payload of their own; leaf commands map
@@ -362,6 +382,7 @@ def _collect_commands(group: click.Group, prefix: tuple[str, ...] = ()) -> list[
 @click.command("reference")
 def reference_cmd():
     """Describe CLI commands, parameters, schemas, and exit codes."""
+    from .config import DANGEROUS_COMMANDS
     from .schemas import OUTPUT_SCHEMAS
 
     data = {
@@ -378,6 +399,15 @@ def reference_cmd():
             ),
             "full": "Send, reply, reply-all, forward, and send drafts",
         },
+        "permission_tiers": {
+            "write-dangerous": (
+                "Irreversible / high-blast-radius writes (folders empty, folders delete, "
+                "mail batch with --action delete, tools oof set, tools oof disable). "
+                "Require --dangerous in BOTH the --dry-run and --confirm steps; "
+                "missing --dangerous returns E_CONFIRMATION_REQUIRED (exit 5)."
+            ),
+        },
+        "dangerous_commands": sorted(DANGEROUS_COMMANDS | {"mail batch (when --action delete)"}),
         "security": {
             "untrusted_marker": "_untrusted",
             "external_content_rule": (
@@ -413,6 +443,7 @@ def reference_cmd():
             "--compact",
             "--dry-run",
             "--confirm <token>",
+            "--dangerous",
             "--quiet",
             "--account <email>",
         ],

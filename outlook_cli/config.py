@@ -58,6 +58,19 @@ WRITE_COMMANDS = frozenset(
     }
 )
 
+# Irreversible / high-blast-radius writes that additionally require an explicit
+# --dangerous opt-in in BOTH the dry-run and confirm steps (T2 gate). "mail batch"
+# is conditional — only dangerous when its --action is "delete" — so it is gated
+# inside the command, not by membership here.
+DANGEROUS_COMMANDS = frozenset(
+    {
+        "folders empty",
+        "folders delete",
+        "tools oof set",
+        "tools oof disable",
+    }
+)
+
 # Commands that only write local files/config and do not require elevated
 # Outlook mailbox permissions, but still must use dry-run/confirm.
 LOCAL_WRITE_COMMANDS = frozenset(
@@ -277,6 +290,30 @@ def check_permission(cmd_path: str) -> None:
     # read-only commands always allowed
     if is_mutating:
         _require_confirm(cmd_path)
+
+
+def require_dangerous(cmd_path: str) -> None:
+    """Enforce the --dangerous opt-in for irreversible/high-blast writes.
+
+    Required in BOTH the dry-run and confirm steps so an agent cannot discover a
+    token without first acknowledging the blast radius. Missing --dangerous ->
+    E_CONFIRMATION_REQUIRED (exit 5).
+    """
+    import click
+
+    from . import output
+
+    ctx = click.get_current_context(silent=True)
+    obj = ctx.obj if ctx and ctx.obj else {}
+    if obj.get("dangerous"):
+        return
+
+    output.handle_error(
+        f"Command '{cmd_path}' is irreversible and requires --dangerous in both "
+        "the --dry-run and --confirm steps",
+        "E_CONFIRMATION_REQUIRED",
+        details={"command": cmd_path, "required_flag": "--dangerous", "tier": "write-dangerous"},
+    )
 
 
 def _deny(cmd_path: str, current: str, required: str) -> None:

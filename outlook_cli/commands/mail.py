@@ -862,7 +862,13 @@ def mail_restore(ctx, mail_id, folder):
 @click.pass_context
 def mail_batch(ctx, ids, batch_action, folder, force):
     """Batch operations on multiple emails."""
-    from ..config import check_permission
+    from ..config import check_permission, require_dangerous
+
+    # Batch delete is the only irreversible/high-blast batch action — gate it
+    # (in both dry-run and confirm steps) behind the --dangerous opt-in. This
+    # runs before check_permission so the token isn't validated/consumed first.
+    if batch_action == "delete":
+        require_dangerous("mail batch")
 
     check_permission("mail batch")
 
