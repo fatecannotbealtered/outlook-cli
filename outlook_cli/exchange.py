@@ -3,8 +3,10 @@
 Migrated from the original utils.py with improved structure.
 """
 
+import json
 import os
 import threading
+import time
 from collections import deque
 
 # Lazy import of exchangelib to avoid import errors when not installed
@@ -13,6 +15,13 @@ _account_lock = threading.Lock()
 
 # Max folder depth for find_mail_by_id
 _MAX_FOLDER_DEPTH = 20
+
+# Credential-probe cache: keep the result on disk so `context` (and any caller)
+# can report whether the credentials actually work without re-hitting Exchange
+# on every invocation. TTL keeps it cheap; the timeout keeps it non-blocking.
+_PROBE_CACHE_NAME = "credential-probe.json"
+_PROBE_TTL_SECONDS = 300
+_PROBE_TIMEOUT_SECONDS = 5
 
 
 def get_account(shared_mailbox: str = None):
@@ -298,3 +307,112 @@ def reset_connection() -> None:
     global _account
     with _account_lock:
         _account = None
+
+
+def _probe_cache_path():
+    from .config import config_dir
+
+    return config_dir() / _PROBE_CACHE_NAME
+
+
+def _read_probe_cache(fingerprint: str):
+    """Return a fresh cached probe result for this credential fingerprint, else None."""
+    path = _probe_cache_path()
+    if not path.exists():
+        return None
+    try:
+        cached = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    if cached.get("fingerprint") != fingerprint:
+        return None
+    if time.time() - cached.get("checked_at", 0) > _PROBE_TTL_SECONDS:
+        return None
+    return cached.get("result")
+
+
+def _write_probe_cache(fingerprint: str, result: dict) -> None:
+    """Persist a probe result; best-effort, observation must not break the caller."""
+    try:
+        path = _probe_cache_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(
+            json.dumps({"fingerprint": fingerprint, "checked_at": time.time(), "result": result}),
+            encoding="utf-8",
+        )
+        try:
+            os.chmod(path, 0o600)
+        except OSError:
+            pass
+    except Exception:
+        pass
+
+
+def _run_probe(email: str, password: str, server: str, target_email: str) -> dict:
+    """Do a single lightweight authenticated access. Returns a result dict, never raises."""
+    try:
+        from exchangelib import DELEGATE, Account, Configuration, Credentials
+    except ImportError:
+        return {"valid": False, "reason": "exchangelib not installed"}
+
+    try:
+        credentials = Credentials(email, password)
+        if server:
+            config = Configuration(server=server, credentials=credentials)
+            account = Account(target_email, config=config, access_type=DELEGATE)
+        else:
+            account = Account(
+                target_email,
+                credentials=credentials,
+                autodiscover=True,
+                access_type=DELEGATE,
+            )
+        # Cheapest authenticated touch that proves the credentials resolve.
+        _ = account.inbox.total_count
+        return {"valid": True, "reason": ""}
+    except Exception as exc:
+        return {"valid": False, "reason": type(exc).__name__}
+
+
+def probe_credentials() -> dict:
+    """Cheap, cached probe of whether the configured credentials actually work.
+
+    Returns {"valid": bool, "reason": str, "checked": bool}. Never raises and
+    never blocks longer than the probe timeout — on timeout/unconfigured we
+    report valid:false with the reason rather than holding up the caller.
+    """
+    from .config import load
+
+    cfg = load()
+    email = cfg.get("email", "").strip()
+    password = cfg.get("password", "").strip()
+    if not email or not password:
+        return {"valid": False, "reason": "not configured", "checked": False}
+
+    server = cfg.get("server", "").strip()
+    target_email = cfg.get("shared_mailbox", "").strip() or email
+    # Fingerprint excludes the secret itself; password length is enough to bust
+    # the cache on a re-login without writing the password to the cache file.
+    fingerprint = f"{email}|{target_email}|{server}|{len(password)}"
+
+    cached = _read_probe_cache(fingerprint)
+    if cached is not None:
+        return {**cached, "checked": True}
+
+    result_holder = {}
+
+    def _worker():
+        result_holder["result"] = _run_probe(email, password, server, target_email)
+
+    thread = threading.Thread(target=_worker, daemon=True)
+    thread.start()
+    thread.join(_PROBE_TIMEOUT_SECONDS)
+
+    if "result" not in result_holder:
+        # Probe still running — don't block. Report unknown-as-invalid with a
+        # reason; don't cache so the next call can retry.
+        return {"valid": False, "reason": "probe timed out", "checked": True}
+
+    result = result_holder["result"]
+    _write_probe_cache(fingerprint, result)
+    return {**result, "checked": True}
