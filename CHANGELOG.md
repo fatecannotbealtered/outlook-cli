@@ -17,7 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- npm scope 迁移 `@fatecannotbealtered-` → `@ananke`（无横线 org 在 npm 被占，迁移到 `@ananke`）。根包及 6 个平台 optionalDependencies 包名同步改为 `@ananke/outlook-cli[-<os>-<arch>]`；GitHub org / go module path / `npx skills add` 源 / release URL 中的裸 `fatecannotbealtered` 不变。
+- npm scope 迁移 `@fatecannotbealtered-` → `@fateforge`（无横线 org 在 npm 被占，迁移到 `@fateforge`）。根包及 6 个平台 optionalDependencies 包名同步改为 `@fateforge/outlook-cli[-<os>-<arch>]`；GitHub org / go module path / `npx skills add` 源 / release URL 中的裸 `fatecannotbealtered` 不变。
 - `mail batch` and `mail draft-send` result shape moved to the §15.5 batch contract (`items[]` + `summary{total,succeeded,failed}`), replacing the previous `success`/`failed_ids`/`results` shape.
 
 ### Fixed
@@ -201,7 +201,7 @@ Initial release of outlook-cli for Microsoft Exchange.
 - **Error code taxonomy**: CONFIG_ERROR, AUTH_REQUIRED, FORBIDDEN, NOT_FOUND, VALIDATION_ERROR, SERVER_ERROR, NETWORK_ERROR with actionable hints.
 - **Credential encryption**: AES-256-GCM with machine-bound key derived via PBKDF2.
 - **PyInstaller binary packaging** for Windows, macOS (Intel/ARM), Linux.
-- **npm distribution**: `npm install -g @ananke/outlook-cli` with bundled AI Agent Skill.
+- **npm distribution**: `npm install -g @fateforge/outlook-cli` with bundled AI Agent Skill.
 - **Environment variables**: `OUTLOOK_EMAIL`, `OUTLOOK_PASSWORD`, `OUTLOOK_SERVER`, `OUTLOOK_TIMEZONE`, `OUTLOOK_PERMISSIONS` override config file for CI/Agent use.
 
 ### Documentation

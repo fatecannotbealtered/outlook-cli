@@ -435,7 +435,7 @@ class TestUpdateCommand:
             "npm",
             "install",
             "-g",
-            "@ananke/outlook-cli@latest",
+            "@fateforge/outlook-cli@latest",
         ]
 
     def test_update_invalid_token_is_conflict(self):
