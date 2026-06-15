@@ -15,10 +15,10 @@ from typing import Any
 
 from . import __version__
 
-NPM_PACKAGE = "@fatecannotbealtered-/outlook-cli"
+NPM_PACKAGE = "@ananke/outlook-cli"
 PYPI_PACKAGE = "outlook-cli"
 SKILL_REPO = "fatecannotbealtered/outlook-cli"
-NPM_LATEST_URL = "https://registry.npmjs.org/@fatecannotbealtered-%2Foutlook-cli/latest"
+NPM_LATEST_URL = "https://registry.npmjs.org/@ananke%2Foutlook-cli/latest"
 PYPI_URL = "https://pypi.org/pypi/outlook-cli/json"
 GITHUB_RELEASES_URL = "https://github.com/fatecannotbealtered/outlook-cli/releases"
 UPDATE_NOTICE_TTL_SECONDS = 24 * 60 * 60
@@ -127,7 +127,7 @@ def check_update(manager: str, timeout: float = 5.0) -> dict[str, Any]:
 def release_url(manager: str) -> str:
     """Return the human release/source page for an update method."""
     if manager == "npm":
-        return "https://www.npmjs.com/package/@fatecannotbealtered-/outlook-cli"
+        return "https://www.npmjs.com/package/@ananke/outlook-cli"
     if manager == "pip":
         return "https://pypi.org/project/outlook-cli/"
     return GITHUB_RELEASES_URL

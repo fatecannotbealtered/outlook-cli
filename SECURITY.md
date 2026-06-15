@@ -4,7 +4,7 @@
 
 Security fixes are applied to the latest release on `main`. Release binaries are
 built from tagged source and distributed through GitHub Releases and the npm
-package `@fatecannotbealtered-/outlook-cli`.
+package `@ananke/outlook-cli`.
 
 ## Risk Tier
 
