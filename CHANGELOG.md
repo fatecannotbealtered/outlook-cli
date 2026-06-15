@@ -19,6 +19,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `mail batch` and `mail draft-send` result shape moved to the §15.5 batch contract (`items[]` + `summary{total,succeeded,failed}`), replacing the previous `success`/`failed_ids`/`results` shape.
 
+### Fixed
+
+- `mail list` no longer raises `E_SERVER: 'CalendarItem' object has no attribute 'sender'` when a folder (e.g. Deleted Items / trash) holds non-Message items such as a cancelled-meeting `CalendarItem`. The item→dict conversion now reads `sender`, `to_recipients`, `cc_recipients`, `datetime_received`, `subject`, `is_read`, and `attachments` defensively via `getattr`, returning safe defaults (`sender="unknown"`, empty lists, empty date) for non-mail items.
+
 ## [1.1.3] - 2026-06-14
 
 ### Added

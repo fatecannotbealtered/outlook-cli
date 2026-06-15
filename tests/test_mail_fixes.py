@@ -438,5 +438,77 @@ def test_context_valid_reflects_probe(monkeypatch):
     assert creds["reason"] == "UnauthorizedError"
 
 
+# --------------------------------------------------------------------------
+# 5. mail list survives non-Message items (CalendarItem) in a mixed folder
+# --------------------------------------------------------------------------
+
+
+class FakeCalendarItem:
+    """A non-Message folder item (e.g. a cancelled-meeting CalendarItem landing in
+    Deleted Items). Mail-only attributes are absent, so accessing `.sender` etc.
+    raises AttributeError — exactly like exchangelib's CalendarItem, not None."""
+
+    def __init__(self):
+        self.subject = "Cancelled: Sprint sync"
+        self.datetime_received = None
+        self.id = "cal-1"
+
+
+def test_mail_list_survives_calendar_item_in_trash(monkeypatch):
+    from outlook_cli import exchange
+
+    # A trash folder mixing a normal message with a CalendarItem lacking `.sender`.
+    msg = _fake_search_item("alice@co.com", 1)
+    cal = FakeCalendarItem()
+    recorder = []
+
+    class FakeTrash:
+        def all(self):
+            return FakeQuerySet([msg, cal], recorder)
+
+    account = types.SimpleNamespace()
+
+    monkeypatch.setattr("outlook_cli.config.check_permission", lambda *_a, **_k: None)
+    monkeypatch.setattr(mail, "get_account", lambda *a, **k: account)
+    monkeypatch.setattr(mail, "resolve_folder", lambda *a, **k: FakeTrash())
+    # email_to_dict is imported into the mail module's namespace.
+    monkeypatch.setattr(mail, "email_to_dict", exchange.email_to_dict)
+
+    from click.testing import CliRunner
+
+    output.init(format_mode="json")
+    runner = CliRunner()
+    result = runner.invoke(
+        mail.mail_list,
+        ["--folder", "trash", "--limit", "10"],
+        obj={"dry_run": False, "confirm": None},
+        catch_exceptions=False,
+    )
+    # Must not blow up with E_SERVER: 'CalendarItem' object has no attribute 'sender'.
+    assert result.exit_code == 0, result.output
+    doc = json.loads(result.output[result.output.find("{") :])["data"]
+
+    assert doc["count"] == 2
+    cal_dict = next(e for e in doc["emails"] if e["id"] == "cal-1")
+    # Non-mail item gets safe defaults instead of crashing.
+    assert cal_dict["sender"] == "unknown"
+    assert cal_dict["to"] == []
+    assert cal_dict["cc"] == []
+    assert cal_dict["date"] == ""
+
+
+def test_email_to_dict_handles_item_without_mail_attrs():
+    """email_to_dict must not raise AttributeError on a non-Message item."""
+    from outlook_cli.exchange import email_to_dict
+
+    d = email_to_dict(FakeCalendarItem())
+    assert d["sender"] == "unknown"
+    assert d["to"] == []
+    assert d["cc"] == []
+    assert d["subject"] == "Cancelled: Sprint sync"
+    assert d["has_attachments"] is False
+    assert d["is_read"] is False
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
