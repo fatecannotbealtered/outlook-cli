@@ -123,7 +123,7 @@ Conventions:
 | 6 | Precondition conflict or invalid token | re-read state, then retry |
 | 7 | Retryable transient error (network/rate-limit/server) | back off and retry |
 | 8 | Timeout | back off and retry |
-| 9 | Human action required (see §15.3, optional) | relay to the user, run `resume` once done |
+| 9 | Human action required (see §16.3, optional) | relay to the user, run `resume` once done |
 
 Error codes and exit codes must align:
 
@@ -134,7 +134,7 @@ Error codes and exit codes must align:
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
-- `E_HUMAN_REQUIRED` -> 9 (optional, only when §15.3 is enabled)
+- `E_HUMAN_REQUIRED` -> 9 (optional, only when §16.3 is enabled)
 
 When the failure comes from an upstream HTTP call, map the status onto the
 taxonomy so the agent can tell failure modes apart from `error.code` +
@@ -651,11 +651,120 @@ Release verification baseline:
 - Also hint in the result: `run "changelog --since <previous_version>" to see what changed`.
 - Agent convention: after self-update, before continuing, read `changelog --since <old version>` (see the SKILL-SPEC recipe).
 
-## 15. Optional patterns (enable as needed)
+## 15. Batch operations
+
+Many write workflows need to act on a batch of objects in one call (close many issues, send to many openids, run one SQL across many instances). A batch command is still **one** agent-facing command with **one** envelope, **one** confirm token, and **one** aggregated result — never a loop the agent has to drive. The contract below is identical whether the batch is served by a native upstream bulk endpoint (class A) or by a client-side loop (class B); the agent must not be able to tell which.
+
+### 15.1 Plural inputs
+
+- Batch targets use a plural flag: `--ids`, `--symbols`, `--instances`, `--openids`, etc.
+- Each plural flag accepts both **comma-separated** (`--ids 1,2,3`) and **repeatable** (`--ids 1 --ids 2 --ids 3`) forms; the two are equivalent and may be mixed.
+- A single value degrades gracefully: `--ids 1` is a valid batch of one, same envelope as a batch of many. Where a singular flag (`--symbol`) already exists, keep it as a compatibility alias of the plural and declare it deprecated in reference; do not run two divergent code paths.
+- De-duplicate targets before executing and preserve input order in the result `items[]` so the agent can zip results back to inputs deterministically.
+- An empty target list is a usage error (`E_VALIDATION`, exit 2), not a silent no-op.
+
+### 15.2 Dry-run summary for a batch
+
+`--dry-run` on a batch returns **what will happen to N objects** before any write, plus a single `confirm_token` that covers the whole batch:
+
+```json
+{
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {
+    "preview": {
+      "action": "close",
+      "total": 3,
+      "targets": ["1042", "1043", "1044"],
+      "changes": [
+        { "action": "close", "resource": "issue", "id": "1042" },
+        { "action": "close", "resource": "issue", "id": "1043" },
+        { "action": "close", "resource": "issue", "id": "1044" }
+      ]
+    },
+    "confirm_token": "ct_9f2a...",
+    "expires_at": "2026-06-15T12:00:00Z"
+  },
+  "meta": { "duration_ms": 0 }
+}
+```
+
+- The preview must state the operation and the full target set, so a human or agent can audit the blast radius before confirming.
+- The token binds the **whole resolved target set** (plus command path, args, account, permission context per §7), so adding or removing a target invalidates it with `E_CONFLICT`.
+
+### 15.3 One confirm token covers the whole batch, consumed once
+
+- A single `--confirm <token>` from the batch dry-run authorizes the entire batch; the agent does not confirm per item.
+- The token is **single-use** exactly as in §9: it is fingerprinted and marked consumed before the write runs, and any replay is rejected with `E_CONFLICT` ("token already used; re-run `--dry-run`"). This reuses each repo's existing single-consumption confirm infrastructure — batch adds no new token mechanism.
+- On a partial batch failure the token stays consumed; the agent re-runs `--dry-run` (which now resolves to the still-pending targets) rather than replaying the old token.
+
+### 15.4 Dangerous batches: `--dangerous` two-step gate
+
+Irreversible or high-blast-radius batches — bulk `delete`, MR `merge`, mass send / broadcast — require an extra gate **on top of** dry-run → confirm:
+
+- The command must be invoked with `--dangerous`; without it the command fails with `E_CONFIRMATION_REQUIRED` (exit 5) even when a valid confirm token is present.
+- This is a two-step human-intent gate: `--dangerous` declares intent, the confirm token authorizes the specific resolved batch. Both are required; neither alone executes.
+- Reference marks these commands `dangerous: true`, and their `examples[]` show the `--dangerous` form.
+- Tools may layer stricter local policy on a dangerous batch (e.g. per-item confirm, default `--continue-on-error false`, or night-time dry-run-only); such overrides must be declared in reference, not hidden.
+
+### 15.5 Per-item aggregated result, no whole-batch rollback
+
+Batch results aggregate per item. A partial failure does **not** roll back succeeded items:
+
+```json
+{
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {
+    "items": [
+      { "target": "1042", "ok": true },
+      { "target": "1043", "ok": true },
+      {
+        "target": "1044",
+        "ok": false,
+        "error": { "code": "E_NOT_FOUND", "retryable": false }
+      }
+    ],
+    "summary": { "total": 3, "succeeded": 2, "failed": 1 }
+  },
+  "meta": { "duration_ms": 0 }
+}
+```
+
+- Each `items[]` entry carries `target` (the input identifier — `id`, `symbol`, `instance`, …; use the natural key, not an array index), `ok`, and on failure `error` with the same `{ code, retryable }` taxonomy as the top-level envelope (§6).
+- `summary` always reports `{ total, succeeded, failed }`. The counts must equal the item tally.
+- Top-level `ok` is `true` when the batch executed and produced a result, even with per-item failures; per-item status lives in `items[]`. Reserve top-level `ok: false` for a batch that could not run at all (bad args, auth, no targets). Do not hide other items' status because one failed (consistent with §9).
+- `--continue-on-error` controls whether the batch keeps going after the first item failure; **default `true`** (best-effort, finish the batch). Set `--continue-on-error false` to stop at the first failure — already-applied items stay applied (no rollback), and `summary` reflects only attempted items, with the unattempted remainder reported (e.g. `skipped`) so the agent can resume. Dangerous batches may flip the default to `false`; declare it in reference.
+
+### 15.6 Upstream caps: client-side auto-chunking
+
+When the native bulk endpoint has a per-call limit, the command splits the batch into chunks and submits them sequentially, presenting a single command to the agent:
+
+- Known caps: Jira `/issue/bulk`, agile `backlog/issue` and `sprint/{id}/issue` ≤ 50; WeChat openid batches ≤ 100, mass-send openid lists per upstream limit. The command must chunk to the cap; it must not pass a too-large batch straight through and let the upstream 400.
+- Chunking is invisible in the contract: still one envelope, one `confirm_token`, one aggregated `items[]`/`summary` across all chunks.
+- A chunk-level failure is mapped back onto the affected `items[]`; one failed chunk does not fail the whole command (subject to `--continue-on-error`).
+- Keep the chunk size in one shared helper per tool so the cap cannot drift between commands sharing an endpoint.
+
+### 15.7 A/B classes, one external contract
+
+- **Class A** uses a native upstream bulk endpoint (true server-side batch, possibly atomic per the upstream).
+- **Class B** loops client-side over single-target calls because no native bulk exists.
+- The external contract is identical for both: plural inputs, dry-run summary, single confirm token, dangerous gate, aggregated `items[]`/`summary`, and `--continue-on-error`. The agent cannot and need not tell A from B.
+- Atomicity is **not** part of the external contract. A class-B (or capped, chunked class-A) batch must not claim upstream atomicity; where the upstream genuinely is non-atomic or order-unstable, say so in the output schema / reference rather than implying a transaction.
+
+### 15.8 Self-description for batch commands
+
+Every batch command carries a real `output_schema` and runnable `examples[]` (per §11):
+
+- The schema declares the `items[]` shape (`target`, `ok`, `error{code,retryable}`) and the `summary{total,succeeded,failed}` shape, with attacker-controllable keys listed in `untrusted_fields` (`_untrusted`).
+- `examples[]` show the plural-input dry-run then confirm pair; dangerous batches include `--dangerous`.
+- These must pass the reference guard (non-empty schema + at least one example per leaf command) and count toward FCC (§13) like any other public behavior.
+
+## 16. Optional patterns (enable as needed)
 
 These three patterns are **not for everyone**: implement them if your tool needs them, ignore them otherwise — zero overhead. They let the spec scale with tool complexity — a simple tool stays light, a complex tool need not reinvent the wheel. Each is marked "when applicable."
 
-### 15.1 Credential lifecycle (when tokens expire)
+### 16.1 Credential lifecycle (when tokens expire)
 
 **When applicable**: credentials are not static but expire / need refresh — OAuth access_token (WeChat Official Account ~2h), cookie / session (Xiaohongshu), temporary STS credentials, etc. Tools with static username/password skip this section.
 
@@ -677,7 +786,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - `doctor` adds a `check: "credentials"` item; for near-expiry give `warn` + a renew `fix`.
 - Refresh tokens and secrets are always redacted — never in stdout / stderr / details.
 
-### 15.2 Async job lifecycle (long jobs: submit -> poll -> fetch result)
+### 16.2 Async job lifecycle (long jobs: submit -> poll -> fetch result)
 
 **When applicable**: the operation can't return a result synchronously — async SQL execution / approval (Archery), bulk send, scrape/crawl jobs, large exports. Commands that return results synchronously skip this section.
 
@@ -702,7 +811,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - A `failed` result uses the standard error envelope; `retryable` indicates whether the whole job can be retried.
 - Submission of a write-type long job still goes through `dry-run → confirm`; the `job_id` is created only after confirm.
 
-### 15.3 Human-in-the-loop checkpoints (when a human must scan / solve captcha / approve)
+### 16.3 Human-in-the-loop checkpoints (when a human must scan / solve captcha / approve)
 
 **When applicable**: a step mid-flow must be completed by a human — QR login / captcha (Xiaohongshu), approver sign-off (Archery), secondary confirmation. Fully automated tools skip this section.
 
@@ -726,7 +835,7 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - `details.action` is a stable enum describing what the human must do; `details.resume` gives the command to continue after the human is done.
 - Agent convention: on `E_HUMAN_REQUIRED` → relay `message` and the required action to the user → wait for them → run `resume`; do not auto-retry.
 
-## 16. Design checklist
+## 17. Design checklist
 
 > Items marked `(optional)` only apply when the corresponding optional pattern is enabled.
 
@@ -748,6 +857,11 @@ These three patterns are **not for everyone**: implement them if your tool needs
 - [ ] (with self-update) post-update returns previous/current version and hints to read changelog
 - [ ] Query commands support `fields` / `compact`
 - [ ] List commands support pagination or explicitly state none is needed
+- [ ] Batch commands take plural inputs (`--ids`/`--symbols`/…), comma-separated or repeatable, single value degrades
+- [ ] Batch dry-run summarizes the full target set; one confirm token covers and is consumed once for the whole batch
+- [ ] Dangerous batches (delete / merge / mass-send) require the `--dangerous` two-step gate
+- [ ] Batch results aggregate `items[].{target,ok,error{code,retryable}}` + `summary{total,succeeded,failed}`, no whole-batch rollback, `--continue-on-error` default true
+- [ ] Capped upstream bulk auto-chunks client-side under one command; A/B classes share one external contract; batch commands ship real `output_schema` + `examples`
 - [ ] Functional Contract Coverage is 100% for public README / Skill / reference / help / context / doctor / changelog / update behavior
 - [ ] Stable releases have recorded live smoke/E2E evidence; otherwise the tool declares `beta`
 - [ ] All times ISO 8601 UTC

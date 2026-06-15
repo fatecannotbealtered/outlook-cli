@@ -34,7 +34,7 @@ Run in order; close out each step against the matching spec's checklist:
 2. **Define the contract** (→ CLI-SPEC.md): implement the envelope, exit-code mapping, and error taxonomy *before* the first command. This is the foundation, not an afterthought.
 3. **Build the self-description set** (→ CLI-SPEC.md §11): `reference` / `context` / `doctor` / `changelog`. `changelog` is derived from CHANGELOG.md and embedded at build time.
 4. **Implement commands**: query commands support `--fields` / `--compact` / pagination; write commands go through dry-run/confirm.
-5. **Evaluate optional patterns** (→ CLI-SPEC.md §15, as needed): tokens expire? → credential lifecycle; long-running jobs? → async jobs; QR/captcha/approval? → human-in-the-loop. Do it only if you need it.
+5. **Evaluate optional patterns** (→ CLI-SPEC.md §16, as needed): tokens expire? → credential lifecycle; long-running jobs? → async jobs; QR/captcha/approval? → human-in-the-loop. Do it only if you need it.
 6. **Set the security tier** (→ SEC-SPEC.md): classify T0/T1/T2, then apply injection defense, least privilege, credential-at-rest, and supply chain by tier.
 7. **Write the Skill** (→ SKILL-SPEC.md): frontmatter (with `requires.bins` + `min_version`), trigger list, error decision tree, usage playbooks.
 8. **Set up distribution** (→ shared REPO-SPEC.md §4b): npm wrapper (`scripts/{run,prepare-npm-platform-packages}.js`), binary not committed.

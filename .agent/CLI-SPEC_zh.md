@@ -120,7 +120,7 @@
 | 6    | 前置条件冲突或 token 失效   | 重新读取状态后重试              |
 | 7    | 可重试瞬时错误（网络/限流/服务端） | 退避后重试                  |
 | 8    | 超时                 | 退避后重试                  |
-| 9    | 需人工介入（见 §15.3，可选） | 转述给用户，待其完成后跑 `resume`  |
+| 9    | 需人工介入（见 §16.3，可选） | 转述给用户，待其完成后跑 `resume`  |
 
 错误码与 exit code 必须一致：
 
@@ -131,7 +131,7 @@
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
-- `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §15.3 时）
+- `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §16.3 时）
 
 当错误来自上游 HTTP 调用时，按状态码映射到错误码，让 agent 能从 `error.code` +
 `retryable` 区分失败类型——不要把所有 4xx 都塌缩成 `E_NETWORK`：
@@ -591,11 +591,120 @@ release 校验基线：
 - 同时在结果中提示：`run "changelog --since <previous_version>" to see what changed`。
 - Agent 约定：自更新后、继续干活前，先读 `changelog --since <旧版本>`（见 SKILL-SPEC 配方）。
 
-## 15. 可选模式（按需启用）
+## 15. 批量操作（Batch operations）
+
+很多写操作的现实工作流需要一次对**一批**对象执行（关一批 issue、群发给一批 openid、对一批实例跑同一条 SQL）。批量命令对 Agent 仍是**一条**命令、**一个** envelope、**一个** confirm token、**一份**聚合结果——绝不是要 Agent 自己驱动的循环。下面的契约无论该批量由上游原生 bulk 端点服务（A 类）还是客户端循环实现（B 类）都完全一致；Agent 不应、也不需要分辨是哪一类。
+
+### 15.1 复数入参
+
+- 批量目标用复数参数：`--ids`、`--symbols`、`--instances`、`--openids` 等。
+- 每个复数参数同时接受 **comma-separated**（`--ids 1,2,3`）与 **repeatable**（`--ids 1 --ids 2 --ids 3`）两种写法；二者等价，可混用。
+- 单值优雅退化：`--ids 1` 是合法的「批量一个」，与批量多个同形 envelope。已存在单数参数（`--symbol`）的，保留为复数的兼容别名并在 reference 标 deprecated，不维护两条分叉代码路径。
+- 执行前对目标去重，并在结果 `items[]` 中保持输入顺序，使 Agent 能确定性地把结果对回输入。
+- 空目标列表是用法错误（`E_VALIDATION`，exit 2），不是静默 no-op。
+
+### 15.2 批量的 dry-run 汇总
+
+批量的 `--dry-run` 在任何写之前返回**将对 N 个对象做什么**，并给出一个覆盖整批的 `confirm_token`：
+
+```json
+{
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {
+    "preview": {
+      "action": "close",
+      "total": 3,
+      "targets": ["1042", "1043", "1044"],
+      "changes": [
+        { "action": "close", "resource": "issue", "id": "1042" },
+        { "action": "close", "resource": "issue", "id": "1043" },
+        { "action": "close", "resource": "issue", "id": "1044" }
+      ]
+    },
+    "confirm_token": "ct_9f2a...",
+    "expires_at": "2026-06-15T12:00:00Z"
+  },
+  "meta": { "duration_ms": 0 }
+}
+```
+
+- preview 必须说明操作与完整目标集合，让人或 Agent 在确认前审计影响范围（blast radius）。
+- token 绑定**整个已解析的目标集合**（外加命令路径、参数、账号、权限上下文，见 §7），增减任一目标即令其失效并返回 `E_CONFLICT`。
+
+### 15.3 单个 confirm token 覆盖整批，且单次消费
+
+- 批量 dry-run 给出的单个 `--confirm <token>` 授权整批；Agent 不逐项确认。
+- token **单次消费**，与 §9 完全一致：写执行前记录指纹并标记已消费，任何重放以 `E_CONFLICT` 拒绝（「token 已用过，请重新 `--dry-run`」）。这沿用各仓现有的 confirm 单次消费基础设施——批量不新增任何 token 机制。
+- 批量部分失败后，token 仍保持已消费；Agent 重新 `--dry-run`（此时只解析到仍待处理的目标），而不是重放旧 token。
+
+### 15.4 危险批量：`--dangerous` 两步闸门
+
+不可逆或高影响范围的批量——批量 `delete`、MR `merge`、群发 / 广播——在 dry-run → confirm **之上**再加一道闸门：
+
+- 命令必须带 `--dangerous` 调用；不带时即使持有有效 confirm token，命令也以 `E_CONFIRMATION_REQUIRED`（exit 5）失败。
+- 这是两步人意闸门：`--dangerous` 声明意图，confirm token 授权具体已解析的那一批。两者缺一不可，任何一个单独都不执行。
+- reference 把这些命令标 `dangerous: true`，其 `examples[]` 展示 `--dangerous` 形式。
+- 工具可在危险批量上叠加更严格的本地策略（如逐项 confirm、默认 `--continue-on-error false`、夜间仅 dry-run）；此类覆盖必须在 reference 声明，不得暗藏。
+
+### 15.5 逐项聚合结果，不整体回滚
+
+批量结果按项聚合。部分失败**不**回滚已成功的项：
+
+```json
+{
+  "ok": true,
+  "schema_version": "1.0",
+  "data": {
+    "items": [
+      { "target": "1042", "ok": true },
+      { "target": "1043", "ok": true },
+      {
+        "target": "1044",
+        "ok": false,
+        "error": { "code": "E_NOT_FOUND", "retryable": false }
+      }
+    ],
+    "summary": { "total": 3, "succeeded": 2, "failed": 1 }
+  },
+  "meta": { "duration_ms": 0 }
+}
+```
+
+- 每个 `items[]` 项带 `target`（输入标识——`id`、`symbol`、`instance`……；用自然键，不用数组下标）、`ok`，失败时带 `error`，其 `{ code, retryable }` 分类与顶层 envelope（§6）一致。
+- `summary` 始终报告 `{ total, succeeded, failed }`，计数必须与 item 实际数量相等。
+- 只要批量执行并产出结果，顶层 `ok` 即为 `true`，即便存在逐项失败；逐项状态在 `items[]` 里。顶层 `ok: false` 仅保留给整批根本无法执行的情况（参数错、鉴权、无目标）。不要因为单项失败而隐藏其他项状态（与 §9 一致）。
+- `--continue-on-error` 控制首个失败后是否继续；**默认 `true`**（尽力而为，跑完整批）。设 `--continue-on-error false` 在首个失败处停止——已应用的项保持已应用（不回滚），`summary` 只反映已尝试的项，未尝试的剩余项要报告出来（如 `skipped`），让 Agent 可续跑。危险批量可把默认翻成 `false`，需在 reference 声明。
+
+### 15.6 上游有上限：客户端自动分批
+
+当原生 bulk 端点有单次调用上限时，命令把批量切成多块顺序提交，对 Agent 仍呈现为一条命令：
+
+- 已知上限：Jira `/issue/bulk`、agile `backlog/issue` 与 `sprint/{id}/issue` ≤ 50；微信 openid 批量 ≤ 100，群发 openid 列表按上游上限。命令必须按上限分批，不得把超限批量直接透传让上游 400。
+- 分批在契约里不可见：跨所有块仍是一个 envelope、一个 `confirm_token`、一份聚合 `items[]`/`summary`。
+- 块级失败映射回受影响的 `items[]`；单块失败不令整条命令失败（受 `--continue-on-error` 约束）。
+- 把分批大小收敛到每个工具的一个共享 helper 里，避免共用同一端点的命令间上限漂移。
+
+### 15.7 A/B 两类，对外契约一致
+
+- **A 类**用上游原生 bulk 端点（真服务端批量，上游可能原子）。
+- **B 类**因无原生 bulk，客户端对单目标调用做循环。
+- 对外契约对两类完全一致：复数入参、dry-run 汇总、单 confirm token、危险闸门、聚合 `items[]`/`summary`、`--continue-on-error`。Agent 无法也无需分辨 A 与 B。
+- 原子性**不**是对外契约的一部分。B 类（或被分批的、有上限的 A 类）批量不得宣称上游原子；上游确实非原子或顺序不稳定时，在 output schema / reference 里如实说明，而不是暗示事务语义。
+
+### 15.8 批量命令的自描述
+
+每个批量命令带真实的 `output_schema` 与可运行 `examples[]`（见 §11）：
+
+- schema 声明 `items[]` 形状（`target`、`ok`、`error{code,retryable}`）与 `summary{total,succeeded,failed}` 形状，攻击者可控的键列入 `untrusted_fields`（`_untrusted`）。
+- `examples[]` 展示复数入参的 dry-run 再 confirm 这一对；危险批量带 `--dangerous`。
+- 这些必须通过 reference 守卫（每个叶子命令非空 schema + 至少一条 example），并像其他公开行为一样计入 FCC（§13）。
+
+## 16. 可选模式（按需启用）
 
 以下三种模式**不是人人必做**：工具用得上就照这里实现，用不上就忽略，零负担。它们让规范随工具复杂度伸缩——简单工具保持轻，复杂工具不必重新发明轮子。每条都标了「何时适用」。
 
-### 15.1 凭证生命周期（令牌会过期时）
+### 16.1 凭证生命周期（令牌会过期时）
 
 **何时适用**：凭证不是静态的，而是会过期 / 需刷新的——OAuth access_token（微信公众号约 2h）、cookie / session（小红书）、临时 STS 凭证等。静态用户名密码的工具跳过本节。
 
@@ -617,7 +726,7 @@ release 校验基线：
 - `doctor` 增一项 `check: "credentials"`，对临近过期给 `warn` + 续期 `fix`。
 - 刷新令牌、secret 一律脱敏，绝不出现在 stdout / stderr / details。
 
-### 15.2 异步任务生命周期（长任务：提交 -> 轮询 -> 取结果）
+### 16.2 异步任务生命周期（长任务：提交 -> 轮询 -> 取结果）
 
 **何时适用**：操作不能同步返回结果——SQL 异步执行 / 审批（Archery）、批量群发、采集 / 爬取任务、大导出。同步即得结果的命令跳过本节。
 
@@ -642,7 +751,7 @@ release 校验基线：
 - `failed` 的结果用标准 error envelope，`retryable` 指明能否重试整个任务。
 - 写类长任务的提交仍走 `dry-run → confirm`；confirm 后才落 `job_id`。
 
-### 15.3 人工介入检查点（需要人来扫码 / 验证码 / 审批时）
+### 16.3 人工介入检查点（需要人来扫码 / 验证码 / 审批时）
 
 **何时适用**：流程中途必须由人完成某步——扫码登录 / 验证码（小红书）、审批人放行（Archery）、二次确认等。全自动工具跳过本节。
 
@@ -666,7 +775,7 @@ release 校验基线：
 - `details.action` 用稳定枚举说明需要人做什么，`details.resume` 给出人工完成后的续跑命令。
 - Agent 约定：收到 `E_HUMAN_REQUIRED` → 向用户转述 `message` 与所需动作 → 等用户完成 → 跑 `resume`，不自动重试。
 
-## 16. 设计检查清单
+## 17. 设计检查清单
 
 > 标 `（可选）` 的仅当对应可选模式启用时才需勾。
 
@@ -688,6 +797,11 @@ release 校验基线：
 - [ ] （含 self-update 时）更新后回传 previous/current 版本并提示读 changelog
 - [ ] 查询命令支持 `fields` / `compact`
 - [ ] 列表命令支持分页或明确说明无需分页
+- [ ] 批量命令用复数入参（`--ids`/`--symbols`/…），comma-separated 或 repeatable，单值退化
+- [ ] 批量 dry-run 汇总完整目标集；单个 confirm token 覆盖整批且单次消费
+- [ ] 危险批量（delete / merge / 群发）需 `--dangerous` 两步闸门
+- [ ] 批量结果聚合 `items[].{target,ok,error{code,retryable}}` + `summary{total,succeeded,failed}`，不整体回滚，`--continue-on-error` 默认 true
+- [ ] 有上限的原生 bulk 由客户端自动分批、对外单条命令；A/B 两类对外契约一致；批量命令带真实 `output_schema` + `examples`
 - [ ] README / Skill / reference / help / context / doctor / changelog / update 中声明的公开行为达到 100% 功能契约覆盖率
 - [ ] Stable release 有真实环境 smoke/E2E 记录；否则工具声明为 `beta`
 - [ ] 所有时间为 ISO 8601 UTC
