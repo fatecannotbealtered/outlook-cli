@@ -34,7 +34,7 @@
 2. **定契约**（→ CLI-SPEC）：先实现 envelope、exit code 映射、错误分类，再写第一个命令。这是地基，不要后补。
 3. **建自描述四件套**（→ CLI-SPEC §11）：`reference` / `context` / `doctor` / `changelog`。`changelog` 从 CHANGELOG.md 派生、构建时嵌入。
 4. **实现命令**：查询命令支持 `--fields` / `--compact` / 分页；写命令走 dry-run/confirm。
-5. **评估可选模式**（→ CLI-SPEC §15，按需）：令牌会过期？→ 凭证生命周期；有长任务？→ 异步 job；要扫码/验证码/审批？→ 人工介入。用得上才做，用不上跳过。
+5. **评估可选模式**（→ CLI-SPEC §16，按需）：令牌会过期？→ 凭证生命周期；有长任务？→ 异步 job；要扫码/验证码/审批？→ 人工介入。用得上才做，用不上跳过。
 6. **定安全档**（→ SEC-SPEC）：先判 T0/T1/T2 风险档，按档套用注入防护、最小权限、凭证落盘、供应链。
 7. **写 Skill**（→ SKILL-SPEC）：frontmatter（含 `requires.bins` + `min_version`）、触发清单、错误决策树、用法剧本。
 8. **配分发**（→ 共享 REPO-SPEC §4b）：npm 壳（`scripts/{run,prepare-npm-platform-packages}.js`），二进制不入库。
