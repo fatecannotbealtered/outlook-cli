@@ -22,30 +22,49 @@ def main():
     dist_dir.mkdir(exist_ok=True)
 
     cmd = [
-        sys.executable, "-m", "PyInstaller",
+        sys.executable,
+        "-m",
+        "PyInstaller",
         "--onefile",
-        "--name", name,
+        "--name",
+        name,
         "--clean",
         "--noconfirm",
         # Explicitly collect the whole package so PyInstaller doesn't
         # miss submodules that are only imported lazily (inside functions).
-        "--hidden-import", "outlook_cli",
-        "--hidden-import", "outlook_cli.main",
-        "--hidden-import", "outlook_cli.config",
-        "--hidden-import", "outlook_cli.exchange",
-        "--hidden-import", "outlook_cli.output",
-        "--hidden-import", "outlook_cli.audit",
-        "--hidden-import", "outlook_cli.crypto",
-        "--hidden-import", "outlook_cli.commands",
-        "--hidden-import", "outlook_cli.commands.mail",
-        "--hidden-import", "outlook_cli.commands.cal",
-        "--hidden-import", "outlook_cli.commands.folders",
-        "--hidden-import", "outlook_cli.commands.rules",
-        "--hidden-import", "outlook_cli.commands.tools",
-        "--hidden-import", "outlook_cli.commands.setup",
+        "--hidden-import",
+        "outlook_cli",
+        "--hidden-import",
+        "outlook_cli.main",
+        "--hidden-import",
+        "outlook_cli.config",
+        "--hidden-import",
+        "outlook_cli.exchange",
+        "--hidden-import",
+        "outlook_cli.output",
+        "--hidden-import",
+        "outlook_cli.audit",
+        "--hidden-import",
+        "outlook_cli.crypto",
+        "--hidden-import",
+        "outlook_cli.commands",
+        "--hidden-import",
+        "outlook_cli.commands.mail",
+        "--hidden-import",
+        "outlook_cli.commands.cal",
+        "--hidden-import",
+        "outlook_cli.commands.folders",
+        "--hidden-import",
+        "outlook_cli.commands.rules",
+        "--hidden-import",
+        "outlook_cli.commands.tools",
+        "--hidden-import",
+        "outlook_cli.commands.setup",
         # exchangelib and its dynamic submodules
-        "--collect-all", "exchangelib",
-        "--add-data", f"CHANGELOG.md{os.pathsep}.",
+        "--collect-all",
+        "exchangelib",
+        "--add-data",
+        f"CHANGELOG.md{os.pathsep}.",
         str(entry),
     ]
 
@@ -71,7 +90,7 @@ def main():
 
     if binary.exists():
         size_mb = binary.stat().st_size / (1024 * 1024)
-        print(f"\nBuild successful!")
+        print("\nBuild successful!")
         print(f"  Output: {binary}")
         print(f"  Size: {size_mb:.1f} MB")
         print(f"  Platform: {system}-{arch}")
