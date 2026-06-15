@@ -281,22 +281,26 @@ def email_to_dict(item, preview_len: int = 500) -> dict:
     """Convert an exchangelib Message to a flat dict."""
     from .timeutil import iso_utc
 
-    sender = item.sender.email_address if item.sender else "unknown"
-    to_list = [m.email_address for m in (item.to_recipients or [])]
-    cc_list = [m.email_address for m in (item.cc_recipients or [])]
-    body = item.text_body or ""
+    # Folders can hold non-Message items (e.g. CalendarItem for a cancelled meeting
+    # in Deleted Items). Those lack mail-only attributes and raise AttributeError on
+    # access — not return None — so guard every mail-specific field with getattr.
+    sender_mbx = getattr(item, "sender", None)
+    sender = sender_mbx.email_address if sender_mbx else "unknown"
+    to_list = [m.email_address for m in (getattr(item, "to_recipients", None) or [])]
+    cc_list = [m.email_address for m in (getattr(item, "cc_recipients", None) or [])]
+    body = getattr(item, "text_body", None) or ""
     body_clean = " ".join(body.split())
     # Use Exchange ItemId (not MIME Message-ID) for consistency with --id flags
-    item_id = str(item.id) if hasattr(item, "id") and item.id else ""
+    item_id = str(item.id) if getattr(item, "id", None) else ""
     return {
         "id": item_id,
-        "subject": item.subject or "(no subject)",
+        "subject": getattr(item, "subject", None) or "(no subject)",
         "sender": sender,
         "to": to_list,
         "cc": cc_list,
-        "date": iso_utc(item.datetime_received),
-        "is_read": item.is_read,
-        "has_attachments": bool(item.attachments),
+        "date": iso_utc(getattr(item, "datetime_received", None)),
+        "is_read": bool(getattr(item, "is_read", False)),
+        "has_attachments": bool(getattr(item, "attachments", None)),
         "preview": body_clean[:preview_len] + ("..." if len(body_clean) > preview_len else ""),
         "_untrusted": ["subject", "sender", "to", "cc", "preview"],
     }

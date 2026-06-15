@@ -40,10 +40,7 @@ RELEASE_READINESS = {
         "(native bulk_send), cal batch create/delete (mail batch complete and cal batch "
         "update validated via dry-run + contract tests). Contract points confirmed live: "
         "partial-failure aggregation, single-use confirm-token replay (E_CONFLICT), and "
-        "--dangerous gating (exit 5) on both delete actions. Known unrelated defect: "
-        "'mail list --folder trash' raises E_SERVER when Deleted Items holds a "
-        "CalendarItem (list path reads .sender unconditionally); does not affect the "
-        "batch commands and is tracked separately."
+        "--dangerous gating (exit 5) on both delete actions."
     ),
     "required_evidence": [
         "functional_contract_coverage_100",
