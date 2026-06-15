@@ -3,7 +3,7 @@
 [English](README.md) | [中文](README_zh.md)
 
 [![CI](https://github.com/fatecannotbealtered/outlook-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/outlook-cli/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@ananke/outlook-cli.svg)](https://www.npmjs.com/package/@ananke/outlook-cli)
+[![npm version](https://img.shields.io/npm/v/@fateforge/outlook-cli.svg)](https://www.npmjs.com/package/@fateforge/outlook-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > Agent-native Outlook Exchange CLI for mail, calendar, folders, rules, contacts, rooms, OOF settings, meeting responses, diagnostics, and updates.
@@ -14,7 +14,7 @@ Paste this block into the AI Agent that will operate Outlook Exchange. It instal
 
 ```bash
 # Install CLI and Agent Skill.
-npm install -g @ananke/outlook-cli
+npm install -g @fateforge/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 # Provide runtime context. Replace placeholders in the local shell/secret manager.

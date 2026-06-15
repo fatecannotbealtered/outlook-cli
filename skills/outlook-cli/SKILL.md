@@ -13,7 +13,7 @@ Outlook Exchange CLI for deterministic Outlook/Exchange operations.
 
 ```bash
 # Please install outlook-cli and use it for Outlook/Exchange operations going forward.
-npm install -g @ananke/outlook-cli
+npm install -g @fateforge/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 outlook-cli context --compact
