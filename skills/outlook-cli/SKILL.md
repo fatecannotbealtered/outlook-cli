@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.3"
+version: "1.1.4"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.3"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.4"}}
 ---
 
 # outlook-cli
@@ -13,7 +13,7 @@ Outlook Exchange CLI for deterministic Outlook/Exchange operations.
 
 ```bash
 # Please install outlook-cli and use it for Outlook/Exchange operations going forward.
-npm install -g @fatecannotbealtered-/outlook-cli
+npm install -g @ananke/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 outlook-cli context --compact

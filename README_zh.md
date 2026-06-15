@@ -3,7 +3,7 @@
 [English](README.md) | [中文](README_zh.md)
 
 [![CI](https://github.com/fatecannotbealtered/outlook-cli/actions/workflows/ci.yml/badge.svg)](https://github.com/fatecannotbealtered/outlook-cli/actions/workflows/ci.yml)
-[![npm version](https://img.shields.io/npm/v/@fatecannotbealtered-/outlook-cli.svg)](https://www.npmjs.com/package/@fatecannotbealtered-/outlook-cli)
+[![npm version](https://img.shields.io/npm/v/@ananke/outlook-cli.svg)](https://www.npmjs.com/package/@ananke/outlook-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 > 面向 AI Agent 的 Outlook Exchange CLI，覆盖邮件、日历、文件夹、规则、联系人、会议室、自动回复、会议响应、诊断和更新。
@@ -14,7 +14,7 @@
 
 ```bash
 # 安装 CLI 和 Agent Skill。
-npm install -g @fatecannotbealtered-/outlook-cli
+npm install -g @ananke/outlook-cli
 npx skills add fatecannotbealtered/outlook-cli -y -g
 
 # 提供运行上下文。把占位符替换为本地 shell/密钥管理器里的值。

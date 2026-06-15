@@ -263,11 +263,11 @@ class TestSelfDescription:
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["current_version"] == "1.1.3"
+        assert data["current_version"] == "1.1.4"
         # Skip a pending [Unreleased] section; the newest *released* entry must
         # match the current version.
         released = [e for e in data["entries"] if e["version"].lower() != "unreleased"]
-        assert released[0]["version"] == "1.1.3"
+        assert released[0]["version"] == "1.1.4"
 
 
 class TestPermissionEnforcement:
@@ -435,7 +435,7 @@ class TestUpdateCommand:
             "npm",
             "install",
             "-g",
-            "@fatecannotbealtered-/outlook-cli@latest",
+            "@ananke/outlook-cli@latest",
         ]
 
     def test_update_invalid_token_is_conflict(self):

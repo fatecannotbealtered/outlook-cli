@@ -21,7 +21,7 @@ def test_npm_update_command_latest():
         "npm",
         "install",
         "-g",
-        "@fatecannotbealtered-/outlook-cli@latest",
+        "@ananke/outlook-cli@latest",
     ]
 
 
