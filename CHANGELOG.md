@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.5] - 2026-06-16
+
+### Changed
+
+- `update` is rewritten from package-manager delegation (pip/npm) to a verified binary self-update of the frozen executable: download the release archive + `checksums.txt` + Sigstore bundle, verify the signature **in-process** with the `sigstore` library (bundled into the frozen binary; TUF root embedded) against this repo's tagged release-workflow identity, verify the archive SHA256, and replace the running binary — no dependency on pip/npm. Releases are signed with `cosign sign-blob --new-bundle-format`.
+
+### Security
+
+- Verification is mandatory and fail-closed (no skip path); release-integrity failures return the non-retryable `E_INTEGRITY` code (exit 1) instead of a retryable network code.
+
 ## [1.1.4] - 2026-06-15
 
 ### Added

@@ -99,7 +99,7 @@ jobs:
 
       - name: Sign checksums
         shell: bash
-        run: cosign sign-blob --bundle release/checksums.txt.sigstore.json release/checksums.txt --yes
+        run: cosign sign-blob --new-bundle-format --bundle release/checksums.txt.sigstore.json release/checksums.txt --yes
 
       - name: Extract release notes from CHANGELOG
         shell: bash

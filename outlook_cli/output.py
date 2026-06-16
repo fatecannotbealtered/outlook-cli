@@ -40,6 +40,10 @@ ERROR_HINTS = {
     "E_NETWORK": "Check network, VPN, proxy, and OUTLOOK_SERVER.",
     "E_RATE_LIMITED": "Too many requests. Back off before retrying.",
     "E_TIMEOUT": "The operation timed out. Back off before retrying.",
+    "E_INTEGRITY": (
+        "Release integrity verification failed (signature or checksum); do not retry. "
+        "Re-run update to fetch the current release, or report a possible supply-chain issue."
+    ),
     "E_UNKNOWN": "Inspect error.details for more context.",
 }
 
@@ -73,6 +77,7 @@ EXIT_CODE_BY_ERROR = {
     "E_RATE_LIMITED": 7,
     "E_SERVER": 7,
     "E_TIMEOUT": 8,
+    "E_INTEGRITY": 1,
 }
 
 RETRYABLE_ERRORS = {"E_NETWORK", "E_RATE_LIMITED", "E_SERVER", "E_TIMEOUT"}

@@ -60,9 +60,24 @@ def main():
         "outlook_cli.commands.tools",
         "--hidden-import",
         "outlook_cli.commands.setup",
+        "--hidden-import",
+        "outlook_cli.update_binary",
         # exchangelib and its dynamic submodules
         "--collect-all",
         "exchangelib",
+        # Sigstore in-process verification: collect the libraries AND their data
+        # files (TUF embedded root.json, trust bundles) so the frozen binary can
+        # verify releases offline-bootstrapped, with no external cosign.
+        "--collect-all",
+        "sigstore",
+        "--collect-all",
+        "tuf",
+        "--collect-all",
+        "securesystemslib",
+        # keyring backends are discovered via entry points; collect submodules so
+        # the OS keychain backend survives freezing (validated on Windows).
+        "--collect-submodules",
+        "keyring",
         "--add-data",
         f"CHANGELOG.md{os.pathsep}.",
         str(entry),

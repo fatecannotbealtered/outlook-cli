@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import shutil
 import subprocess
 import sys
 import urllib.error
@@ -50,37 +49,9 @@ def detect_install_method(requested: str = "auto") -> str:
         return "manual"
 
 
-def update_command(manager: str, target_version: str = "latest") -> list[str]:
-    """Build the command that performs the update."""
-    if manager == "npm":
-        target = target_version if target_version != "latest" else "latest"
-        return ["npm", "install", "-g", f"{NPM_PACKAGE}@{target}"]
-    if manager == "pip":
-        if target_version == "latest":
-            return [sys.executable, "-m", "pip", "install", "--upgrade", PYPI_PACKAGE]
-        return [
-            sys.executable,
-            "-m",
-            "pip",
-            "install",
-            "--upgrade",
-            f"{PYPI_PACKAGE}=={target_version}",
-        ]
-    return []
-
-
 def skill_sync_command() -> list[str]:
     """Build the command that syncs the whole Agent Skill directory."""
     return ["npx", "skills", "add", SKILL_REPO, "-y", "-g"]
-
-
-def signature_status(manager: str) -> str:
-    """Describe where release integrity verification happens for this update path."""
-    if manager == "npm":
-        return "handled_by_npm_installer"
-    if manager == "pip":
-        return "handled_by_package_manager"
-    return "manual_release_verification_required"
 
 
 def _read_json_url(url: str, timeout: float = 5.0) -> dict[str, Any]:
@@ -89,48 +60,40 @@ def _read_json_url(url: str, timeout: float = 5.0) -> dict[str, Any]:
         return json.loads(resp.read().decode("utf-8"))
 
 
-def latest_version(manager: str, timeout: float = 5.0) -> tuple[str | None, str | None]:
-    """Return (latest_version, error_message)."""
+def latest_version(manager: str = "", timeout: float = 5.0) -> tuple[str | None, str | None]:
+    """Return (latest_version, error_message) from the GitHub releases API.
+
+    The binary self-update path is the single source of truth; the package
+    registries are no longer consulted."""
+    from .update_binary import GITHUB_API, REPO, normalize_version
+
     try:
-        if manager == "npm":
-            data = _read_json_url(NPM_LATEST_URL, timeout=timeout)
-            return str(data.get("version") or ""), None
-        if manager == "pip":
-            data = _read_json_url(PYPI_URL, timeout=timeout)
-            return str(data.get("info", {}).get("version") or ""), None
-        return None, "manual installs do not expose a package registry"
+        url = f"{GITHUB_API.rstrip('/')}/repos/{REPO}/releases/latest"
+        data = _read_json_url(url, timeout=timeout)
+        tag = normalize_version(str(data.get("tag_name") or ""))
+        return (tag or None), None
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
         return None, str(exc)
     except Exception as exc:
         return None, str(exc)
 
 
-def check_update(manager: str, timeout: float = 5.0) -> dict[str, Any]:
+def check_update(manager: str = "", timeout: float = 5.0) -> dict[str, Any]:
     """Build a read-only update status payload."""
     latest, err = latest_version(manager, timeout=timeout)
-    command = update_command(manager)
     return {
         "current_version": __version__,
         "latest_version": latest or "",
         "update_available": bool(latest and latest != __version__),
-        "install_method": manager,
-        "supported": manager in {"npm", "pip"},
-        "command": command,
-        "release_url": release_url(manager),
-        "signature_status": signature_status(manager),
+        "install_method": "github-binary",
+        "supported": True,
+        "command": ["outlook-cli", "update", "--dry-run"],
+        "release_url": GITHUB_RELEASES_URL,
+        "signature_status": "not_checked",
         "skill_sync_command": skill_sync_command(),
         "skill_sync_status": "not_run",
         "error": err or "",
     }
-
-
-def release_url(manager: str) -> str:
-    """Return the human release/source page for an update method."""
-    if manager == "npm":
-        return "https://www.npmjs.com/package/@fateforge/outlook-cli"
-    if manager == "pip":
-        return "https://pypi.org/project/outlook-cli/"
-    return GITHUB_RELEASES_URL
 
 
 def refresh_update_notices(manager: str, source: str, timeout: float = 2.0) -> list[dict[str, Any]]:
@@ -262,25 +225,22 @@ def _now_iso(epoch: float | None = None) -> str:
 
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     """Build a deterministic dry-run plan without touching the network."""
-    command = update_command(manager, target_version)
     skill_command = skill_sync_command()
-    supported = bool(command)
     return {
         "current_version": __version__,
         "target_version": target_version,
-        "install_method": manager,
-        "supported": supported,
-        "command": command,
-        "signature_status": signature_status(manager),
+        "install_method": "github-binary",
+        "supported": True,
+        "command": ["outlook-cli", "update", "--confirm", "<confirm_token>"],
+        "signature_status": "not_checked",
         "skill_sync_command": skill_command,
         "skill_sync_status": "not_run",
         "changes": [
             {
-                "action": "update",
+                "action": "download_verify_replace_binary",
                 "detail": {
-                    "install_method": manager,
                     "target_version": target_version,
-                    "command": command,
+                    "verification": "Sigstore signature + archive SHA256",
                 },
             },
             {
@@ -295,47 +255,19 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
 
 
 def execute_update(manager: str, target_version: str, quiet: bool = False) -> dict[str, Any]:
-    """Execute the package-manager update command."""
-    command = update_command(manager, target_version)
-    if not command:
-        raise UpdateUnsupported(
-            "This installation cannot be updated automatically. Download a release manually."
-        )
+    """Download, verify (Sigstore signature + SHA256), and install the target
+    release binary, then sync the Skill directory.
 
-    if shutil.which(command[0]) is None and not Path(command[0]).exists():
-        raise UpdateUnsupported(f"Update manager not found: {command[0]}")
+    Raises IntegrityError on any supply-chain failure (non-retryable) and
+    UpdateFailed on transport or Skill-sync failures (retryable)."""
+    from .update_binary import IntegrityError, perform_binary_update
 
-    resolved_version = target_version
-    if target_version == "latest":
-        latest, _ = latest_version(manager)
-        if latest:
-            resolved_version = latest
-
-    result = subprocess.run(command, capture_output=True, text=True, timeout=300)
-    if not quiet:
-        if result.stdout:
-            print(
-                result.stdout,
-                file=sys.stderr,
-                end="" if result.stdout.endswith("\n") else "\n",
-            )
-        if result.stderr:
-            print(
-                result.stderr,
-                file=sys.stderr,
-                end="" if result.stderr.endswith("\n") else "\n",
-            )
-
-    if result.returncode != 0:
-        raise UpdateFailed(
-            "Update command failed",
-            {
-                "command": command,
-                "returncode": result.returncode,
-                "stdout": result.stdout[-4000:],
-                "stderr": result.stderr[-4000:],
-            },
-        )
+    try:
+        result = perform_binary_update(target_version)
+    except IntegrityError:
+        raise
+    except (OSError, urllib.error.URLError, TimeoutError) as exc:
+        raise UpdateFailed("Downloading release failed", {"error": str(exc)}) from exc
 
     skill_command = skill_sync_command()
     skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
@@ -365,12 +297,13 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
 
     return {
         "previous_version": __version__,
-        "current_version": resolved_version,
+        "current_version": result["current_version"],
         "target_version": target_version,
-        "install_method": manager,
-        "command": command,
-        "signature_status": signature_status(manager),
-        "skill_sync_command": skill_command,
+        "install_method": "github-binary",
+        "status": result["status"],
+        "signature_status": result["signature_status"],
+        "signature_verified": result.get("signature_verified", True),
+        "skill_sync_command": shlex.join(skill_command),
         "skill_sync_status": "synced",
         "updated": True,
         "next_step": f'run "outlook-cli changelog --since {__version__}" to see what changed',

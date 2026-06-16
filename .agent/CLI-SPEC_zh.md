@@ -131,6 +131,7 @@
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
+- `E_INTEGRITY` -> 1（发布完整性失败：签名缺失/无效或 checksum 不符；**非重试**，见 §14）
 - `E_HUMAN_REQUIRED` -> 9（可选，仅启用 §16.3 时）
 
 当错误来自上游 HTTP 调用时，按状态码映射到错误码，让 agent 能从 `error.code` +
@@ -583,9 +584,12 @@ update 必须遵守的契约：
 
 release 校验基线：
 
-- 按 `checksums.txt` 校验归档/包；checksum 不匹配、缺失 checksum 文件、或缺少当前归档条目，都必须失败关闭。
-- 已签名 release 应由 tagged GitHub Actions release workflow 使用 Sigstore/Cosign keyless 模式签署 `checksums.txt`。验证端应绑定到预期仓库 workflow 身份和 GitHub OIDC issuer。
-- update 结果携带 `signature_status`（一个短字符串说明发布完整性在哪里被验证：如 `verified`、`not_checked`、`handled_by_npm_installer`、`manual_release_verification_required`）与 `signature_verified`（仅当本地 Sigstore 验证真实执行且成功时为 true）。不能把 checksum 校验伪装成签名校验。
+- **强制签名验证，无跳过路径**：二进制自更新路径必须在进程内验证 `checksums.txt` 的 Sigstore 签名，再用它校验归档 SHA256。签名 bundle 缺失、签名验不过、checksum 不符，一律**失败关闭**，不存在"验不了就放行"的降级。整条链对外返回 `E_INTEGRITY`（exit 1，非重试）——伪造或损坏的发布不该被当成可重试的瞬时错误。
+- **验证器内置、不依赖用户环境**：验证在工具二进制内完成（Go 用 `sigstore-go`，Python 冻结二进制内用 `sigstore`），**不外挂 cosign**，不依赖机器上预装任何东西。TUF 信任根从库内嵌的 `root.json` 引导（不是 TOFU 现拉现信）。
+- **新版 bundle 格式**：签名侧用 `cosign sign-blob --new-bundle-format` 产出 Sigstore protobuf bundle（`checksums.txt.sigstore.json`），与进程内验证器对齐；旧版 cosign bundle 格式不被接受。
+- **身份绑定**：验证端把证书 SAN 绑定到本仓库的 tagged release workflow（`…/release.yml@refs/tags/v*`，锚定 `^…$`）并校验 GitHub OIDC issuer。已知目标 tag 时可绑精确身份，强于正则。
+- **跨语言统一**：Go 二进制与 Python 冻结二进制走同一套自更新契约——都是"下载归档 → 进程内验签 → checksum → 替换二进制"，包管理器不参与完整性。
+- update 结果携带 `signature_status`（成功即 `verified`；异常一律走 error envelope 中止）与 `signature_verified`（仅当进程内 Sigstore 验证真实执行且成功时为 true）。不能把 checksum 校验伪装成签名校验。
 
 - `update --confirm <token>` 成功后，结果 `data` 中返回 `previous_version` 与 `current_version`。
 - 同时在结果中提示：`run "changelog --since <previous_version>" to see what changed`。

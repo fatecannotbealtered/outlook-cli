@@ -263,11 +263,11 @@ class TestSelfDescription:
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["current_version"] == "1.1.4"
+        assert data["current_version"] == "1.1.5"
         # Skip a pending [Unreleased] section; the newest *released* entry must
         # match the current version.
         released = [e for e in data["entries"] if e["version"].lower() != "unreleased"]
-        assert released[0]["version"] == "1.1.4"
+        assert released[0]["version"] == "1.1.5"
 
 
 class TestPermissionEnforcement:
@@ -406,12 +406,13 @@ class TestPermissionEnforcement:
 class TestUpdateCommand:
     """Test self-update command contract without executing package managers."""
 
-    def test_update_check_manual(self):
-        code, stdout, _ = run_cli("update", "--check", "--manager", "manual", "--compact")
+    def test_update_check_is_binary(self):
+        code, stdout, _ = run_cli("update", "--check", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["install_method"] == "manual"
-        assert data["supported"] is False
+        assert data["install_method"] == "github-binary"
+        assert data["supported"] is True
+        assert data["signature_status"] == "not_checked"
 
     def test_update_requires_confirm(self):
         code, stdout, _ = run_cli("update", "--manager", "npm", "--target-version", "latest")
@@ -431,15 +432,11 @@ class TestUpdateCommand:
         assert code == 0
         data = data_doc(stdout)
         assert data["confirm_token"].startswith("ct_")
-        assert data["command"] == [
-            "npm",
-            "install",
-            "-g",
-            "@fateforge/outlook-cli@latest",
-        ]
+        assert data["install_method"] == "github-binary"
+        assert data["preview"]["changes"][0]["action"] == "download_verify_replace_binary"
 
     def test_update_invalid_token_is_conflict(self):
-        code, stdout, _ = run_cli("update", "--manager", "manual", "--confirm", "ct_bad")
+        code, stdout, _ = run_cli("update", "--confirm", "ct_bad")
         assert code == 6
         assert error_code(stdout) == "E_CONFLICT"
 
