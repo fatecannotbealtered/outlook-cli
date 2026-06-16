@@ -27,6 +27,10 @@
   "bin": {
     "outlook-cli": "scripts/run.js"
   },
+  "scripts": {
+    "version": "node scripts/sync-version.js",
+    "check-version": "node scripts/check-version.js"
+  },
   "optionalDependencies": {
     "@fateforge/outlook-cli-darwin-arm64": "1.1.6",
     "@fateforge/outlook-cli-darwin-x64": "1.1.6",

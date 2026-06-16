@@ -1,12 +1,25 @@
 """setup.py for outlook-cli (development / pip install)."""
 
 import os
+import re
 
 from setuptools import find_packages, setup
 
+
+def _read_version():
+    # Single source of truth: outlook_cli/__init__.py __version__ (kept in
+    # lockstep with package.json by scripts/sync-version.js). Never hand-copy.
+    here = os.path.dirname(__file__)
+    with open(os.path.join(here, "outlook_cli", "__init__.py"), encoding="utf-8") as f:
+        match = re.search(r'__version__\s*=\s*"([^"]+)"', f.read())
+    if not match:
+        raise RuntimeError("Cannot find __version__ in outlook_cli/__init__.py")
+    return match.group(1)
+
+
 setup(
     name="outlook-cli",
-    version="1.1.6",
+    version=_read_version(),
     description="Outlook Exchange CLI for AI Agents",
     long_description=open("README.md", encoding="utf-8").read()
     if os.path.exists("README.md")

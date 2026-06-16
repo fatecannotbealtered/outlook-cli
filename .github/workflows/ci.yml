@@ -45,3 +45,17 @@ jobs:
 
       - name: Smoke test (--help)
         run: python -m outlook_cli.main --help
+
+  version-check:
+    name: Verify version sync
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+
+      # Fail-closed: every derived version location must equal package.json.
+      - name: Verify version sync
+        run: node scripts/check-version.js

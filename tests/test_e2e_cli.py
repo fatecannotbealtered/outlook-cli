@@ -10,6 +10,8 @@ import subprocess
 import sys
 import tempfile
 
+from outlook_cli import __version__ as PKG_VERSION
+
 # Isolated HOME so the developer's real ~/.outlook-cli/config.json (and
 # keyring-backed credentials) never leak into "not configured" assertions.
 _FAKE_HOME = tempfile.mkdtemp(prefix="outlook-cli-e2e-home-")
@@ -263,11 +265,11 @@ class TestSelfDescription:
         code, stdout, _ = run_cli("changelog", "--since", "1.1.0", "--compact")
         assert code == 0
         data = data_doc(stdout)
-        assert data["current_version"] == "1.1.6"
+        assert data["current_version"] == PKG_VERSION
         # Skip a pending [Unreleased] section; the newest *released* entry must
         # match the current version.
         released = [e for e in data["entries"] if e["version"].lower() != "unreleased"]
-        assert released[0]["version"] == "1.1.6"
+        assert released[0]["version"] == PKG_VERSION
 
 
 class TestPermissionEnforcement:
