@@ -97,15 +97,20 @@ Fallback and channel rules:
 
 ## 5. Supply chain (applies to anything distributed)
 
-- **Integrity verification**: install scripts and self-update commands pulling a
-  binary must verify checksums, **hard-fail on mismatch**, and report signature
-  verification status explicitly. A checksum proves bytes match a checksum file;
-  it does not prove the checksum file came from the publisher.
-- **Signed release material**: release pipelines should sign `checksums.txt`
-  with Sigstore/Cosign keyless signing from the tagged GitHub Actions release
-  workflow, publishing the bundle alongside the checksum file. Verification must
-  bind the signature to the expected repository workflow identity and GitHub OIDC
-  issuer.
+- **Integrity verification, mandatory and no-skip**: binary self-update MUST verify
+  the Sigstore signature on `checksums.txt` **in-process** (the verifier is embedded
+  in the tool binary — Go via `sigstore-go`, Python inside the frozen binary via
+  `sigstore` — with **no external cosign** and no user-environment dependency), then
+  verify the archive SHA256. A missing/invalid signature or a checksum mismatch
+  **fails closed** with no "can't verify, proceed anyway" degradation, surfacing
+  `E_INTEGRITY` (non-retryable). A checksum proves bytes match a checksum file; only
+  the signature proves the checksum file came from the publisher.
+- **Signed release material**: release pipelines sign `checksums.txt` with
+  Sigstore/Cosign keyless signing from the tagged GitHub Actions release workflow
+  using `--new-bundle-format` (a Sigstore protobuf bundle the in-process verifier
+  consumes). Verification binds the signature to the expected repository workflow
+  identity (anchored `^…$`) and GitHub OIDC issuer; the TUF trust root is
+  bootstrapped from the library's embedded root, not TOFU.
 - **Dependency locking + audit**: commit a lockfile; CI runs `npm audit` / `pip-audit` and blocks high-severity dependencies.
 - **Traceable builds**: release artifacts are built by CI from tagged source, no hand-uploaded unknown binaries.
 - **No remote scripts in postinstall**: don't execute code freshly pulled from the network at install time.

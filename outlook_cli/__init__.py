@@ -1,3 +1,3 @@
 """outlook-cli - Outlook Exchange CLI for AI Agents."""
 
-__version__ = "1.1.4"
+__version__ = "1.1.5"

@@ -134,6 +134,7 @@ Error codes and exit codes must align:
 - `E_CONFLICT` -> 6
 - `E_NETWORK` / `E_RATE_LIMITED` / `E_SERVER` -> 7
 - `E_TIMEOUT` -> 8
+- `E_INTEGRITY` -> 1 (release integrity failure: missing/invalid signature or checksum mismatch; **non-retryable**, see §14)
 - `E_HUMAN_REQUIRED` -> 9 (optional, only when §16.3 is enabled)
 
 When the failure comes from an upstream HTTP call, map the status onto the
@@ -635,17 +636,31 @@ Version notification contract:
 
 Release verification baseline:
 
-- Verify the archive/package against `checksums.txt`; checksum mismatch, missing
-  checksum file, or missing archive entry fails closed.
-- Signed releases should sign `checksums.txt` with Sigstore/Cosign keyless
-  signing from the tagged GitHub Actions release workflow. Verifiers should
-  validate the bundle against the expected repository workflow identity and the
-  GitHub OIDC issuer.
-- Update results carry `signature_status` (a short string describing where
-  release integrity verification happened: e.g. `verified`, `not_checked`,
-  `handled_by_npm_installer`, `manual_release_verification_required`) and
-  `signature_verified` (true only when local Sigstore verification actually
-  ran and succeeded). Never imply checksum verification is a signature.
+- **Mandatory signature verification, no skip path**: the binary self-update path
+  MUST verify the Sigstore signature on `checksums.txt` in-process, then verify
+  the archive SHA256 against it. A missing signature bundle, a signature that does
+  not verify, or a checksum mismatch all fail closed — there is no "can't verify,
+  proceed anyway" degradation. The whole chain surfaces `E_INTEGRITY` (exit 1,
+  non-retryable): a forged or corrupt release is not a transient blip to retry.
+- **Verifier embedded, no user-environment dependency**: verification happens
+  inside the tool binary (Go via `sigstore-go`, Python inside the frozen binary
+  via `sigstore`) with **no external cosign** and nothing pre-installed on the
+  machine. The TUF trust root is bootstrapped from the library's embedded
+  `root.json`, not fetched on first-use trust (TOFU).
+- **New bundle format**: the signing side produces a Sigstore protobuf bundle
+  (`checksums.txt.sigstore.json`) via `cosign sign-blob --new-bundle-format`, which
+  the in-process verifier consumes; the legacy cosign bundle format is not accepted.
+- **Identity binding**: verifiers bind the certificate SAN to this repo's tagged
+  release workflow (`…/release.yml@refs/tags/v*`, anchored `^…$`) and validate the
+  GitHub OIDC issuer. When the target tag is known, pin the exact identity (stronger
+  than a regexp).
+- **Cross-language parity**: Go binaries and Python frozen binaries follow the same
+  self-update contract — download archive → in-process signature verify → checksum
+  → replace binary. Package managers do not own integrity.
+- Update results carry `signature_status` (`verified` on success; any failure exits
+  via the error envelope) and `signature_verified` (true only when in-process
+  Sigstore verification actually ran and succeeded). Never imply checksum
+  verification is a signature.
 
 - After `update --confirm <token>` succeeds, return `previous_version` and `current_version` in `data`.
 - Also hint in the result: `run "changelog --since <previous_version>" to see what changed`.

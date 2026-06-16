@@ -88,8 +88,8 @@ Agent 侧约定（同时写进 SKILL-SPEC 的用法）：
 
 ## 5. 供应链（凡分发即适用）
 
-- **完整性校验**：安装脚本和自更新命令拉取二进制时必须校验 checksum，**不匹配硬失败**，并显式返回签名校验状态。checksum 只能证明字节与 checksum 文件一致，不能证明 checksum 文件来自发布者。
-- **签名发布材料**：release pipeline 应由 tagged GitHub Actions release workflow 使用 Sigstore/Cosign keyless 模式签署 `checksums.txt`，并把 bundle 与 checksum 一起发布。验证时必须绑定到预期仓库 workflow 身份和 GitHub OIDC issuer。
+- **完整性校验，强制且无跳过**：二进制自更新必须**在进程内**验证 `checksums.txt` 的 Sigstore 签名（验证器内置工具二进制，Go 用 `sigstore-go`、Python 冻结二进制内用 `sigstore`，**不外挂 cosign**、不依赖用户环境），再用它校验归档 SHA256。签名缺失/验不过/checksum 不符一律**失败关闭**，没有"验不了就放行"的降级；对外返回 `E_INTEGRITY`（非重试）。checksum 只能证明字节与 checksum 文件一致，签名才能证明 checksum 文件来自发布者。
+- **签名发布材料**：release pipeline 由 tagged GitHub Actions release workflow 用 Sigstore/Cosign keyless 模式以 `--new-bundle-format` 签署 `checksums.txt`（产出 Sigstore protobuf bundle），与进程内验证器对齐。验证时绑定到预期仓库 workflow 身份（锚定 `^…$`）和 GitHub OIDC issuer；TUF 信任根从库内嵌 root 引导，不 TOFU。
 - **依赖锁定 + 审计**：提交 lockfile；CI 跑 `npm audit` / `pip-audit` 一类，高危依赖阻断。
 - **构建可追溯**：发布产物由 CI 从打了 tag 的源码构建，不手工上传不明二进制。
 - **不在 postinstall 跑远程脚本**：安装期不执行从网络现拉的代码。

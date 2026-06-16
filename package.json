@@ -1,6 +1,6 @@
 {
   "name": "@fateforge/outlook-cli",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Outlook Exchange CLI for AI Agents - manage mail, calendar, folders, rules, contacts, rooms, OOF, and meeting responses",
   "keywords": [
     "outlook",

@@ -654,6 +654,7 @@ def changelog_cmd(since):
 def update_cmd(ctx, check_only, manager, target_version):
     """Check for or install a newer outlook-cli release."""
     from .confirmation import issue_token, validate_token
+    from .update_binary import IntegrityError
     from .updater import (
         UpdateFailed,
         UpdateUnsupported,
@@ -719,6 +720,15 @@ def update_cmd(ctx, check_only, manager, target_version):
             resolved_manager,
             target_version,
             quiet=ctx.obj.get("quiet", False),
+        )
+    except IntegrityError as exc:
+        # Non-retryable: a missing/invalid signature or checksum mismatch is a
+        # supply-chain red flag, not a transient blip an agent should retry.
+        output.handle_error(
+            str(exc),
+            "E_INTEGRITY",
+            details={"install_method": resolved_manager},
+            retryable=False,
         )
     except UpdateUnsupported as exc:
         output.handle_error(
