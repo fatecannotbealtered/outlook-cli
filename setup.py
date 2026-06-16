@@ -6,7 +6,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="outlook-cli",
-    version="1.1.5",
+    version="1.1.6",
     description="Outlook Exchange CLI for AI Agents",
     long_description=open("README.md", encoding="utf-8").read()
     if os.path.exists("README.md")
