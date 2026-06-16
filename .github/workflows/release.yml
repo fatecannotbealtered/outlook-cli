@@ -149,6 +149,9 @@ jobs:
             echo "::error::Tag version (${TAG_VERSION}) does not match package.json version (${PKG_VERSION})"
             exit 1
           fi
+          # Extend the guard to every derived location (SKILL.md, lockfile pins,
+          # optionalDependencies, CHANGELOG), not just package.json.
+          node scripts/check-version.js
 
       - name: Download release archives
         env:
