@@ -40,7 +40,7 @@ def normalize_version(v: str) -> str:
     v = (v or "").strip()
     for prefix in ("refs/tags/", "v", "V"):
         if v.startswith(prefix):
-            v = v[len(prefix):]
+            v = v[len(prefix) :]
     return v
 
 
