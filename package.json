@@ -28,12 +28,12 @@
     "outlook-cli": "scripts/run.js"
   },
   "optionalDependencies": {
-    "@fateforge/outlook-cli-darwin-arm64": "1.1.4",
-    "@fateforge/outlook-cli-darwin-x64": "1.1.4",
-    "@fateforge/outlook-cli-linux-arm64": "1.1.4",
-    "@fateforge/outlook-cli-linux-x64": "1.1.4",
-    "@fateforge/outlook-cli-win32-arm64": "1.1.4",
-    "@fateforge/outlook-cli-win32-x64": "1.1.4"
+    "@fateforge/outlook-cli-darwin-arm64": "1.1.5",
+    "@fateforge/outlook-cli-darwin-x64": "1.1.5",
+    "@fateforge/outlook-cli-linux-arm64": "1.1.5",
+    "@fateforge/outlook-cli-linux-x64": "1.1.5",
+    "@fateforge/outlook-cli-win32-arm64": "1.1.5",
+    "@fateforge/outlook-cli-win32-x64": "1.1.5"
   },
   "files": [
     "scripts/run.js",

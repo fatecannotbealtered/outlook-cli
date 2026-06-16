@@ -184,4 +184,8 @@ jobs:
             echo "npm package ${ROOT_PKG}@${VERSION} already published; skipping"
             exit 0
           fi
+          # Keep platform pins in lockstep with the package version (single
+          # source of truth): rewrite optionalDependencies to the published
+          # version so an npm install never resolves a stale platform binary.
+          node -e "const fs=require('fs'),p=require('./package.json');for(const k in (p.optionalDependencies||{}))p.optionalDependencies[k]=p.version;fs.writeFileSync('./package.json',JSON.stringify(p,null,2)+String.fromCharCode(10))"
           npm publish --access public --provenance
