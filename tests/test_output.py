@@ -181,6 +181,33 @@ def test_error_codes_complete():
         assert code in output.ERROR_CODES, f"Missing error code: {code}"
 
 
+def test_new_update_error_codes_have_hints():
+    for code in ("E_IO", "E_INTERRUPTED"):
+        assert code in output.ERROR_HINTS, f"Missing hint for {code}"
+
+
+def test_new_update_error_codes_map_to_exits():
+    # CLI-SPEC §6: E_IO -> 1, E_INTERRUPTED -> 130.
+    assert output.exit_code_for("E_IO") == 1
+    assert output.exit_code_for("E_INTERRUPTED") == 130
+    assert output.exit_code_for("E_INTEGRITY") == 1
+
+
+def test_integrity_is_non_retryable_by_default():
+    env = output.error_envelope("bad sig", "E_INTEGRITY")
+    assert env["error"]["retryable"] is False
+
+
+def test_interrupted_is_retryable_by_default():
+    env = output.error_envelope("cancelled", "E_INTERRUPTED")
+    assert env["error"]["retryable"] is True
+
+
+def test_io_is_non_retryable_by_default():
+    env = output.error_envelope("disk full", "E_IO")
+    assert env["error"]["retryable"] is False
+
+
 # --- handle_api_error: exception-type classification (replaces substring sniffing) ---
 
 

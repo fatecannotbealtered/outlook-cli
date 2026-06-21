@@ -44,6 +44,14 @@ ERROR_HINTS = {
         "Release integrity verification failed (signature or checksum); do not retry. "
         "Re-run update to fetch the current release, or report a possible supply-chain issue."
     ),
+    "E_IO": (
+        "Local filesystem failure (disk full, file locked, permission, partial write); "
+        "fix the environment, then re-run update."
+    ),
+    "E_INTERRUPTED": (
+        "Operation cancelled by signal/user. Staged work leaves nothing half-applied; "
+        "re-run update, it is idempotent."
+    ),
     "E_UNKNOWN": "Inspect error.details for more context.",
 }
 
@@ -78,9 +86,17 @@ EXIT_CODE_BY_ERROR = {
     "E_SERVER": 7,
     "E_TIMEOUT": 8,
     "E_INTEGRITY": 1,
+    "E_IO": 1,
+    "E_INTERRUPTED": 130,
 }
 
-RETRYABLE_ERRORS = {"E_NETWORK", "E_RATE_LIMITED", "E_SERVER", "E_TIMEOUT"}
+RETRYABLE_ERRORS = {
+    "E_NETWORK",
+    "E_RATE_LIMITED",
+    "E_SERVER",
+    "E_TIMEOUT",
+    "E_INTERRUPTED",
+}
 
 
 def _is_no_color() -> bool:

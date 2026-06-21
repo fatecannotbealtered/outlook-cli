@@ -87,7 +87,7 @@ def check_update(manager: str = "", timeout: float = 5.0) -> dict[str, Any]:
         "update_available": bool(latest and latest != __version__),
         "install_method": "github-binary",
         "supported": True,
-        "command": ["outlook-cli", "update", "--dry-run"],
+        "command": ["outlook-cli", "update"],
         "release_url": GITHUB_RELEASES_URL,
         "signature_status": "not_checked",
         "skill_sync_command": skill_sync_command(),
@@ -115,7 +115,7 @@ def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict
         return []
     current = str(status.get("current_version") or __version__)
     latest = str(status.get("latest_version") or status.get("target_version") or "")
-    default_command = "outlook-cli update --dry-run --compact"
+    default_command = "outlook-cli update --compact"
     command = status.get("command") or []
     if isinstance(command, list):
         recommended = shlex.join(str(part) for part in command) if command else default_command
@@ -231,7 +231,7 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
         "target_version": target_version,
         "install_method": "github-binary",
         "supported": True,
-        "command": ["outlook-cli", "update", "--confirm", "<confirm_token>"],
+        "command": ["outlook-cli", "update"],
         "signature_status": "not_checked",
         "skill_sync_command": skill_command,
         "skill_sync_status": "not_run",
@@ -255,21 +255,66 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
 
 
 def execute_update(manager: str, target_version: str, quiet: bool = False) -> dict[str, Any]:
-    """Download, verify (Sigstore signature + SHA256), and install the target
-    release binary, then sync the Skill directory.
+    """Run the staged self-update: discover -> download -> verify_signature ->
+    verify_checksum -> replace -> skill_sync, then sync the Skill directory.
 
-    Raises IntegrityError on any supply-chain failure (non-retryable) and
-    UpdateFailed on transport or Skill-sync failures (retryable)."""
-    from .update_binary import IntegrityError, perform_binary_update
+    On success returns a result dict carrying the stage invariant fields
+    (`stage`, `current_version`, `binary_replaced`, `skill_sync_status`).
 
+    Raises StageError on every failure, classified by the agent's next action:
+    integrity failures are non-retryable E_INTEGRITY; replace-stage local
+    failures are E_IO / E_FORBIDDEN (binary not replaced); a Skill-sync failure
+    AFTER a successful binary swap is a PARTIAL SUCCESS (binary_replaced=True,
+    retryable) so the agent knows it is already on the new binary."""
+    from .update_binary import IntegrityError, ReplaceError, perform_binary_update
+
+    previous_version = __version__
+    skill_command = skill_sync_command()
+    skill_command_str = shlex.join(skill_command)
+
+    # --- Stages BEFORE the swap: any failure leaves the old binary intact. ---
     try:
         result = perform_binary_update(target_version)
-    except IntegrityError:
-        raise
+    except IntegrityError as exc:
+        # Could be discover (missing asset/tag) or verify (signature/checksum).
+        # Either way it is a non-retryable integrity refusal: old version stays.
+        raise StageError(
+            str(exc),
+            stage="verify_signature",
+            code="E_INTEGRITY",
+            current_version=previous_version,
+            binary_replaced=False,
+            skill_sync_status="not_run",
+            retryable=False,
+        ) from exc
+    except ReplaceError as exc:
+        # Local commit failure: temp/extract/write/rename/permission/disk.
+        # The atomic swap never committed, so the old binary is still installed.
+        raise StageError(
+            str(exc),
+            stage="replace",
+            code=exc.error_code,
+            current_version=previous_version,
+            binary_replaced=False,
+            skill_sync_status="not_run",
+            retryable=False,
+            details={"command": "update", "fix": "see message; fix the environment, then re-run"},
+        ) from exc
     except (OSError, urllib.error.URLError, TimeoutError) as exc:
-        raise UpdateFailed("Downloading release failed", {"error": str(exc)}) from exc
+        # Transport failure during discover/download: transient, old version.
+        raise StageError(
+            "Downloading release failed",
+            stage="download",
+            code="E_NETWORK",
+            current_version=previous_version,
+            binary_replaced=False,
+            skill_sync_status="not_run",
+            retryable=True,
+            details={"error": str(exc)},
+        ) from exc
 
-    skill_command = skill_sync_command()
+    # --- After the atomic swap: the binary is NEW; Skill sync is replayable. ---
+    new_version = result["current_version"]
     skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
     if not quiet:
         if skill_result.stdout:
@@ -285,9 +330,14 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
                 end="" if skill_result.stderr.endswith("\n") else "\n",
             )
     if skill_result.returncode != 0:
-        raise UpdateFailed(
-            "Skill sync command failed",
-            {
+        # Partial success: the binary already updated; only the Skill is stale.
+        raise SkillSyncPartial(
+            f"binary updated to {new_version}; Skill sync failed — "
+            f"run `{skill_command_str}`, then changelog --since {previous_version}",
+            previous_version=previous_version,
+            current_version=new_version,
+            skill_sync_command=skill_command_str,
+            details={
                 "command": skill_command,
                 "returncode": skill_result.returncode,
                 "stdout": skill_result.stdout[-4000:],
@@ -296,17 +346,19 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
         )
 
     return {
-        "previous_version": __version__,
-        "current_version": result["current_version"],
+        "previous_version": previous_version,
+        "current_version": new_version,
         "target_version": target_version,
         "install_method": "github-binary",
         "status": result["status"],
+        "stage": "skill_sync",
+        "binary_replaced": True,
         "signature_status": result["signature_status"],
         "signature_verified": result.get("signature_verified", True),
-        "skill_sync_command": shlex.join(skill_command),
+        "skill_sync_command": skill_command_str,
         "skill_sync_status": "synced",
         "updated": True,
-        "next_step": f'run "outlook-cli changelog --since {__version__}" to see what changed',
+        "next_step": f'run "outlook-cli changelog --since {previous_version}" to see what changed',
     }
 
 
@@ -320,3 +372,84 @@ class UpdateFailed(Exception):
     def __init__(self, message: str, details: dict[str, Any]):
         super().__init__(message)
         self.details = details
+
+
+class StageError(Exception):
+    """A staged-update failure that carries the full post-failure state.
+
+    Every update failure envelope must report `stage`, `current_version`,
+    `binary_replaced`, and `skill_sync_status` so an agent always knows which
+    version it is running and what to do next."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        stage: str,
+        code: str,
+        current_version: str,
+        binary_replaced: bool,
+        skill_sync_status: str,
+        retryable: bool,
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.stage = stage
+        self.code = code
+        self.current_version = current_version
+        self.binary_replaced = binary_replaced
+        self.skill_sync_status = skill_sync_status
+        self.retryable = retryable
+        self.details = dict(details or {})
+
+    def envelope_details(self) -> dict[str, Any]:
+        """Stage-invariant fields every failure envelope must carry."""
+        return {
+            **self.details,
+            "stage": self.stage,
+            "current_version": self.current_version,
+            "binary_replaced": self.binary_replaced,
+            "skill_sync_status": self.skill_sync_status,
+        }
+
+
+class SkillSyncPartial(Exception):
+    """Binary replaced successfully but the Skill sync failed afterwards.
+
+    This is a PARTIAL SUCCESS, not a hard failure: the agent is already on the
+    new binary and only needs to run `skill_sync_command`, then read the
+    changelog. Surfaced as ok:false, binary_replaced:true, retryable:true."""
+
+    def __init__(
+        self,
+        message: str,
+        *,
+        previous_version: str,
+        current_version: str,
+        skill_sync_command: str,
+        details: dict[str, Any] | None = None,
+    ):
+        super().__init__(message)
+        self.previous_version = previous_version
+        self.current_version = current_version
+        self.skill_sync_command = skill_sync_command
+        self.details = dict(details or {})
+
+    def data(self) -> dict[str, Any]:
+        """Partial-success `data` payload (lives in data, not error.details)."""
+        return {
+            "previous_version": self.previous_version,
+            "current_version": self.current_version,
+            "target_version": "",
+            "install_method": "github-binary",
+            "stage": "skill_sync",
+            "binary_replaced": True,
+            "skill_sync_status": "failed",
+            "skill_sync_command": self.skill_sync_command,
+            "updated": True,
+            "next_step": (
+                f"run `{self.skill_sync_command}`, then "
+                f'"outlook-cli changelog --since {self.previous_version}"'
+            ),
+            **self.details,
+        }

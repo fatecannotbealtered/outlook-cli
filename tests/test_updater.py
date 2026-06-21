@@ -46,16 +46,94 @@ def test_execute_update_runs_binary_pipeline_and_syncs_skill():
     assert result["install_method"] == "github-binary"
     assert result["signature_status"] == "verified"
     assert result["skill_sync_status"] == "synced"
+    assert result["binary_replaced"] is True
+    assert result["stage"] == "skill_sync"
 
 
-def test_execute_update_propagates_integrity_error():
-    # A supply-chain failure must surface as a non-retryable IntegrityError, not
-    # be swallowed or remapped to a network error.
+def test_execute_update_integrity_failure_is_non_retryable_stage_error():
+    # A supply-chain failure must surface as a non-retryable StageError tagged
+    # E_INTEGRITY, with the stage invariant intact (old version, not replaced).
     with mock.patch.object(
         update_binary, "perform_binary_update", side_effect=IntegrityError("bad signature")
     ):
-        with pytest.raises(IntegrityError):
+        with pytest.raises(updater.StageError) as excinfo:
             updater.execute_update("auto", "latest", quiet=True)
+    err = excinfo.value
+    assert err.code == "E_INTEGRITY"
+    assert err.retryable is False
+    assert err.binary_replaced is False
+    assert err.current_version == updater.__version__
+    details = err.envelope_details()
+    assert details["stage"] in {"discover", "download", "verify_signature", "verify_checksum"}
+    assert details["binary_replaced"] is False
+    assert details["current_version"] == updater.__version__
+
+
+def test_execute_update_replace_io_failure_is_e_io():
+    # A local replace failure must be E_IO (not network), binary not replaced.
+    with mock.patch.object(
+        update_binary,
+        "perform_binary_update",
+        side_effect=update_binary.ReplaceError("disk full", "E_IO"),
+    ):
+        with pytest.raises(updater.StageError) as excinfo:
+            updater.execute_update("auto", "latest", quiet=True)
+    err = excinfo.value
+    assert err.code == "E_IO"
+    assert err.stage == "replace"
+    assert err.binary_replaced is False
+    assert err.retryable is False
+
+
+def test_execute_update_replace_permission_failure_is_e_forbidden():
+    with mock.patch.object(
+        update_binary,
+        "perform_binary_update",
+        side_effect=update_binary.ReplaceError("permission denied", "E_FORBIDDEN"),
+    ):
+        with pytest.raises(updater.StageError) as excinfo:
+            updater.execute_update("auto", "latest", quiet=True)
+    assert excinfo.value.code == "E_FORBIDDEN"
+    assert excinfo.value.stage == "replace"
+
+
+def test_execute_update_download_failure_is_retryable_network():
+    with mock.patch.object(
+        update_binary, "perform_binary_update", side_effect=OSError("connection reset")
+    ):
+        with pytest.raises(updater.StageError) as excinfo:
+            updater.execute_update("auto", "latest", quiet=True)
+    err = excinfo.value
+    assert err.code == "E_NETWORK"
+    assert err.stage == "download"
+    assert err.retryable is True
+    assert err.binary_replaced is False
+
+
+def test_execute_update_skill_sync_failure_is_partial_success():
+    # Binary replaced, Skill sync failed -> partial success, NOT a hard error:
+    # binary_replaced True, retryable, with skill_sync_command for the agent.
+    completed = mock.Mock(returncode=1, stdout="boom", stderr="npx missing")
+    with (
+        mock.patch.object(
+            update_binary,
+            "perform_binary_update",
+            return_value={
+                "status": "installed",
+                "signature_status": "verified",
+                "current_version": "2.0.1",
+            },
+        ),
+        mock.patch.object(updater.subprocess, "run", return_value=completed),
+    ):
+        with pytest.raises(updater.SkillSyncPartial) as excinfo:
+            updater.execute_update("auto", "latest", quiet=True)
+    err = excinfo.value
+    assert err.current_version == "2.0.1"
+    data = err.data()
+    assert data["binary_replaced"] is True
+    assert data["skill_sync_status"] == "failed"
+    assert data["skill_sync_command"]
 
 
 def test_perform_binary_update_refuses_unsigned_release():

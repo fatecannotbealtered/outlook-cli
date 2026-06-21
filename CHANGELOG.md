@@ -5,6 +5,22 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.7] - 2026-06-21
+
+### Changed
+
+- `update` is now a SINGLE command with NO confirm token: a bare `outlook-cli update` resolves the latest (or `--target-version`) release, verifies its signature and checksum, replaces the binary, and syncs the Skill in one call. The previous `--dry-run` → `--confirm <token>` write gate has been removed from `update` (self-update is exempt from the §7 write gate; the safety guarantee is the in-process Sigstore verification, not a confirm token). `--check` and `--dry-run` remain OPTIONAL read-only previews and no longer issue a `confirm_token` or `expires_at`. `update` is idempotent: already-latest returns a no-op success. Other data-write commands keep the dry-run/confirm flow unchanged.
+
+### Added
+
+- Staged update failure & interruption contract: every update failure envelope now carries `stage` (`discover|download|verify_signature|verify_checksum|replace|skill_sync`), `current_version`, `binary_replaced`, and `skill_sync_status`. Replace-stage local failures are classified as `E_IO` (disk/io, exit 1) or `E_FORBIDDEN` (permission, exit 4) instead of being misreported as `E_NETWORK`. A Skill-sync failure after a successful binary swap is now a PARTIAL SUCCESS (`ok:false`, `binary_replaced:true`, retryable) carrying `skill_sync_command`, instead of a hard network error that hid the completed binary update.
+- SIGINT/SIGTERM are trapped during `update`: the run unwinds to a clean state, the temp dir is always cleaned, and a terminal JSON envelope (`E_INTERRUPTED`, exit 130) is still emitted before exiting.
+- New error codes `E_IO` (→ exit 1, non-retryable) and `E_INTERRUPTED` (→ exit 130, retryable) added to the output package and the code→exit mapping.
+
+### Security
+
+- Verification is unchanged and still fail-closed: signature-then-checksum order preserved, integrity failures remain non-retryable `E_INTEGRITY` (exit 1), and the embedded TUF root / in-process Sigstore path is untouched. Removing the confirm-token gate does not weaken integrity verification (the token was never an integrity mechanism).
+
 ## [1.1.6] - 2026-06-16
 
 ### Fixed

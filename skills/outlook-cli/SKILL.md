@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.6"
+version: "1.1.7"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.6"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.7"}}
 ---
 
 # outlook-cli
@@ -138,15 +138,39 @@ Delete policy:
 Use the update loop only when the user asks to update or when `doctor` reports a
 version mismatch.
 
+`update` is a SINGLE command with NO confirm token: a bare `outlook-cli update`
+resolves the latest (or `--target-version`) release, verifies its signature and
+checksum, replaces the binary, and syncs this Skill — all in one call. It is
+idempotent (already-latest returns a no-op). `--check` and `--dry-run` are
+OPTIONAL read-only previews that change nothing and issue no token.
+
 ```bash
-outlook-cli update --check --compact
-outlook-cli update --dry-run --compact
-outlook-cli update --confirm <confirm_token> --compact
+outlook-cli update --check --compact     # optional: read-only probe
+outlook-cli update --dry-run --compact   # optional: read-only plan, no token
+outlook-cli update --compact             # do it: one call, no --confirm
 outlook-cli changelog --since <previous_version> --compact
 outlook-cli reference --compact
 ```
 
-After a successful update, review `signature_status`, ensure `skill_sync_status` is successful, then read the changelog delta and refresh `reference` before continuing.
+After a successful update, review `signature_status`, ensure `skill_sync_status`
+is `synced`, then read the changelog delta and refresh `reference` before
+continuing.
+
+Failure / interruption: every update failure envelope carries `stage`,
+`current_version`, `binary_replaced`, and `skill_sync_status`.
+- `E_INTEGRITY` (signature/checksum) is NON-retryable — stop and report a
+  possible supply-chain issue, do not loop.
+- `E_NETWORK`/`E_TIMEOUT`/`E_RATE_LIMITED` during discover/download are
+  retryable; re-run `update` (it is idempotent).
+- `E_IO`/`E_FORBIDDEN` at the replace stage means the binary was NOT replaced
+  (still on the old version); fix the environment, then re-run.
+- If the binary replaced but Skill sync failed, the result is a PARTIAL SUCCESS
+  (`ok:false`, `binary_replaced:true`): you are already on the new binary — run
+  the returned `skill_sync_command`, then `changelog --since <previous>` before
+  using newly documented behavior.
+- `E_INTERRUPTED` (exit 130) means a signal cancelled the run; the envelope
+  states the true post-state. Before the swap: no change, still on the old
+  version.
 
 ## Playbooks
 
@@ -264,5 +288,6 @@ Use these scenarios after changing the CLI or this Skill:
   with the returned token; on `E_CONFLICT`, re-read and dry-run again.
 - Permission boundary: attempt a send while permission mode is not `full` and
   surface `E_FORBIDDEN` without suggesting that the agent can raise permission.
-- Self-update: run update check and dry-run, confirm only with user intent, ensure
-  the whole Skill directory is synced, then read `changelog --since <previous_version>` before continuing.
+- Self-update: with user intent, run a bare `update` (single command, no confirm
+  token); ensure the whole Skill directory is synced (`skill_sync_status: synced`),
+  then read `changelog --since <previous_version>` before continuing.

@@ -551,7 +551,7 @@ def doctor_cmd():
             "status": "pass" if _version_at_least(__version__, SKILL_MIN_VERSION) else "fail",
             "fix": None
             if _version_at_least(__version__, SKILL_MIN_VERSION)
-            else "run outlook-cli update --dry-run, then confirm the returned token",
+            else "run outlook-cli update",
             "details": {
                 "current_version": __version__,
                 "minimum_skill_version": SKILL_MIN_VERSION,
@@ -652,15 +652,15 @@ def changelog_cmd(since):
 )
 @click.pass_context
 def update_cmd(ctx, check_only, manager, target_version):
-    """Check for or install a newer outlook-cli release."""
-    from .confirmation import issue_token, validate_token
-    from .update_binary import IntegrityError
+    """Update outlook-cli to the latest (or --target-version) release.
+
+    Single command, no confirm token: a bare `update` resolves, verifies,
+    replaces the binary, and syncs the Skill in one call. `--check` and
+    `--dry-run` stay optional read-only previews and issue no token.
+    """
     from .updater import (
-        UpdateFailed,
-        UpdateUnsupported,
         check_update,
         detect_install_method,
-        execute_update,
         plan_update,
         update_notices_from_status,
         write_update_notice_cache,
@@ -678,13 +678,12 @@ def update_cmd(ctx, check_only, manager, target_version):
         return
 
     if ctx.obj.get("dry_run"):
+        # Read-only preview of the plan. No confirm_token, no expires_at — update
+        # is exempt from the §7 write gate; dry-run is never a required step.
         plan = plan_update(resolved_manager, target_version)
-        token, expires_at = issue_token()
         output.print_json(
             {
                 "preview": {"changes": plan["changes"]},
-                "confirm_token": token,
-                "expires_at": expires_at,
                 "current_version": plan["current_version"],
                 "target_version": plan["target_version"],
                 "install_method": plan["install_method"],
@@ -698,58 +697,121 @@ def update_cmd(ctx, check_only, manager, target_version):
         )
         return
 
-    confirm = ctx.obj.get("confirm")
-    if not confirm:
-        output.handle_error(
-            "Command 'update' requires --dry-run followed by --confirm <token>",
-            "E_CONFIRMATION_REQUIRED",
-            details={"command": "update"},
-        )
+    # Idempotent: already at the requested/latest version is a no-op success.
+    if _already_on_target(resolved_manager, target_version):
+        output.print_json(_update_noop_payload())
+        return
 
-    valid, reason = validate_token(confirm)
-    if not valid:
-        output.handle_error(
-            "Confirm token is invalid for this operation",
-            "E_CONFLICT",
-            details={"command": "update", "reason": reason},
-        )
+    _run_update_with_signal_trap(resolved_manager, target_version, ctx.obj.get("quiet", False))
+
+
+def _already_on_target(resolved_manager: str, target_version: str) -> bool:
+    """True when the running binary already satisfies the requested version."""
+    from .update_binary import normalize_version
+    from .updater import check_update
+
+    requested = normalize_version(target_version)
+    if requested and requested != "latest":
+        return requested == __version__
+    # No explicit target: probe the latest release; treat probe failure as
+    # "not known to be current" so the update path still runs.
+    try:
+        status = check_update(resolved_manager, timeout=5.0)
+    except Exception:
+        return False
+    latest = normalize_version(str(status.get("latest_version") or ""))
+    return bool(latest) and latest == __version__
+
+
+def _update_noop_payload() -> dict:
+    return {
+        "previous_version": __version__,
+        "current_version": __version__,
+        "install_method": "github-binary",
+        "stage": "skill_sync",
+        "binary_replaced": False,
+        "signature_status": "not_checked",
+        "skill_sync_status": "not_run",
+        "updated": False,
+        "noop": True,
+        "message": f"already on outlook-cli {__version__}; nothing to do",
+    }
+
+
+def _run_update_with_signal_trap(resolved_manager, target_version, quiet):
+    """Execute the staged update, trapping SIGINT/SIGTERM so the agent always
+    receives a terminal JSON envelope (E_INTERRUPTED, exit 130) instead of a
+    bare killed process."""
+    import signal
+
+    from .updater import SkillSyncPartial, StageError, UpdateUnsupported, execute_update
+
+    previous_version = __version__
+
+    def _on_signal(signum, _frame):
+        raise KeyboardInterrupt()
+
+    previous_handlers = {}
+    for sig in (signal.SIGINT, getattr(signal, "SIGTERM", None)):
+        if sig is None:
+            continue
+        try:
+            previous_handlers[sig] = signal.signal(sig, _on_signal)
+        except (ValueError, OSError):
+            # Not on the main thread (e.g. under a test runner) — rely on the
+            # default KeyboardInterrupt delivery instead.
+            pass
 
     try:
-        previous_version = __version__
-        data = execute_update(
-            resolved_manager,
-            target_version,
-            quiet=ctx.obj.get("quiet", False),
-        )
-    except IntegrityError as exc:
-        # Non-retryable: a missing/invalid signature or checksum mismatch is a
-        # supply-chain red flag, not a transient blip an agent should retry.
-        output.handle_error(
-            str(exc),
-            "E_INTEGRITY",
-            details={"install_method": resolved_manager},
-            retryable=False,
-        )
-    except UpdateUnsupported as exc:
-        output.handle_error(
-            str(exc),
-            "E_VALIDATION",
-            details={"install_method": resolved_manager},
-        )
-    except UpdateFailed as exc:
-        output.handle_error(
-            str(exc),
-            "E_NETWORK",
-            details=exc.details,
-            retryable=True,
-        )
+        try:
+            data = execute_update(resolved_manager, target_version, quiet=quiet)
+        except KeyboardInterrupt:
+            # Before the swap nothing is committed; the temp dir is always
+            # cleaned by replace_executable's own unwind. Still emit a terminal
+            # envelope so the agent never sees a bare kill.
+            output.handle_error(
+                f"update cancelled — no change, still on {previous_version}",
+                "E_INTERRUPTED",
+                details={
+                    "command": "update",
+                    "stage": "download",
+                    "current_version": previous_version,
+                    "binary_replaced": False,
+                    "skill_sync_status": "not_run",
+                },
+                retryable=True,
+            )
+        except SkillSyncPartial as exc:
+            # Binary already replaced; only the Skill is stale. Partial success:
+            # ok:false but binary_replaced:true so the agent knows it is on the
+            # new binary and just needs to run skill_sync_command.
+            output.error_json(
+                str(exc),
+                "E_NETWORK",
+                details={**exc.details, **exc.data()},
+                retryable=True,
+            )
+            sys.exit(output.exit_code_for("E_NETWORK"))
+        except StageError as exc:
+            output.handle_error(
+                str(exc),
+                exc.code,
+                details={"command": "update", **exc.envelope_details()},
+                retryable=exc.retryable,
+            )
+        except UpdateUnsupported as exc:
+            output.handle_error(
+                str(exc),
+                "E_VALIDATION",
+                details={"install_method": resolved_manager},
+            )
+    finally:
+        for sig, handler in previous_handlers.items():
+            try:
+                signal.signal(sig, handler)
+            except (ValueError, OSError):
+                pass
 
-    data.setdefault("previous_version", previous_version)
-    data.setdefault("current_version", __version__)
-    data.setdefault(
-        "next_step",
-        f'run "outlook-cli changelog --since {previous_version}" to see what changed',
-    )
     output.print_json(data)
 
 

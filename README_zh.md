@@ -76,8 +76,8 @@ README 只做地图，不做完整手册。Agent 在执行任务命令前，应�
 3. 运行 `outlook-cli context --compact` 和 `outlook-cli doctor --compact`。
 4. 运行 `outlook-cli reference --compact`，按实时契约选择命令，不从 `--help` 抓取参数。
 5. JSON 输出优先使用 `--compact` 和 `--fields` 降低 token 消耗。
-6. 写入/更新命令先跑 `--dry-run`，检查 preview 和 `confirm_token`，再用同一操作加 `--confirm <confirm_token>` 执行。
-7. 更新成功后，先查看 `signature_status` 和 checksum 校验状态，确认 `skill_sync_status` 成功，再运行 `outlook-cli changelog --since <previous-version> --compact` 和 `outlook-cli reference --compact` 后继续。
+6. 数据写入命令先跑 `--dry-run`，检查 preview 和 `confirm_token`，再用同一操作加 `--confirm <confirm_token>` 执行。
+7. 自更新直接运行 `outlook-cli update`——这是一个不需要确认令牌的单命令，一次调用即完成解析、校验、替换二进制并同步 Skill（幂等；`--check` 与 `--dry-run` 是可选的只读预览）。更新成功后，先查看 `signature_status` 和 checksum 校验状态，确认 `skill_sync_status` 为 `synced`，再运行 `outlook-cli changelog --since <previous-version> --compact` 和 `outlook-cli reference --compact` 后继续。
 
 ## 机器契约
 

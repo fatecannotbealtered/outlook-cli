@@ -61,6 +61,11 @@ def error_code(stdout):
     return parse_json_doc(stdout)["error"]["code"]
 
 
+def _running_version():
+    """The version the CLI under test actually reports."""
+    return PKG_VERSION
+
+
 def confirm_token_for(*args, env_overrides=None):
     code, stdout, stderr = run_cli(*args, "--dry-run", env_overrides=env_overrides)
     assert code == 0, stderr
@@ -416,12 +421,9 @@ class TestUpdateCommand:
         assert data["supported"] is True
         assert data["signature_status"] == "not_checked"
 
-    def test_update_requires_confirm(self):
-        code, stdout, _ = run_cli("update", "--manager", "npm", "--target-version", "latest")
-        assert code == 5
-        assert error_code(stdout) == "E_CONFIRMATION_REQUIRED"
-
-    def test_update_dry_run_returns_plan_and_token(self):
+    def test_update_dry_run_is_read_only_and_tokenless(self):
+        # --dry-run is now an optional read-only preview: NO confirm_token and
+        # NO expires_at, because update is exempt from the §7 write gate.
         code, stdout, _ = run_cli(
             "update",
             "--manager",
@@ -433,14 +435,32 @@ class TestUpdateCommand:
         )
         assert code == 0
         data = data_doc(stdout)
-        assert data["confirm_token"].startswith("ct_")
+        assert "confirm_token" not in data
+        assert "expires_at" not in data
         assert data["install_method"] == "github-binary"
         assert data["preview"]["changes"][0]["action"] == "download_verify_replace_binary"
 
-    def test_update_invalid_token_is_conflict(self):
-        code, stdout, _ = run_cli("update", "--confirm", "ct_bad")
-        assert code == 6
-        assert error_code(stdout) == "E_CONFLICT"
+    def test_bare_update_executes_without_a_token(self):
+        # A bare `update` must run the whole pipeline in one call — no confirm
+        # gate. We force an already-on-target no-op so no network/binary swap
+        # happens, proving the command executes directly (exit 0, no E_CONFIRM).
+        code, stdout, _ = run_cli(
+            "update", "--target-version", _running_version(), "--compact"
+        )
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["noop"] is True
+        assert data["updated"] is False
+        assert data["binary_replaced"] is False
+
+    def test_update_idempotent_already_on_target(self):
+        code, stdout, _ = run_cli(
+            "update", "--target-version", _running_version(), "--compact"
+        )
+        assert code == 0
+        data = data_doc(stdout)
+        assert data["current_version"] == _running_version()
+        assert data["noop"] is True
 
     def test_setup_login_token_does_not_expose_password(self):
         code, stdout, _ = run_cli(

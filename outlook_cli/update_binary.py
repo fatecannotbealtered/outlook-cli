@@ -36,6 +36,20 @@ class IntegrityError(Exception):
     network code — a forged or corrupt release is not fixed by retrying."""
 
 
+class ReplaceError(Exception):
+    """Local failure committing the binary swap (temp dir, extract, file write,
+    rename, permission, disk full). The atomic swap never committed, so the old
+    binary is still installed (binary_replaced=False). Mapped by the caller to
+    E_FORBIDDEN for permission failures and E_IO for io/disk failures — never to
+    a retryable network code, since these need an environment fix.
+
+    `error_code` is "E_FORBIDDEN" (permission) or "E_IO" (everything else)."""
+
+    def __init__(self, message: str, error_code: str = "E_IO"):
+        super().__init__(message)
+        self.error_code = error_code
+
+
 def normalize_version(v: str) -> str:
     v = (v or "").strip()
     for prefix in ("refs/tags/", "v", "V"):
@@ -236,7 +250,16 @@ def perform_binary_update(target_version: str) -> dict:
     verify_checksum(archive_bytes, checksums_bytes.decode("utf-8", "replace"), asset_name)
 
     new_binary = extract_binary(archive_bytes, is_zip)
-    status = replace_executable(target_path, new_binary)
+    try:
+        status = replace_executable(target_path, new_binary)
+    except PermissionError as exc:
+        raise ReplaceError(
+            f"permission denied replacing {target_path}: {exc}", "E_FORBIDDEN"
+        ) from exc
+    except OSError as exc:
+        raise ReplaceError(
+            f"failed to write or replace {target_path}: {exc}", "E_IO"
+        ) from exc
     return {
         "status": status,
         "signature_status": "verified",

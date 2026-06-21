@@ -120,11 +120,11 @@ This is what distinguishes an "AI-native CLI tool" Skill from an ordinary one; i
     - `2`/`3`/`4` → don't retry, fix args / ask the user.
 7. **Sync the Skill and read the delta after self-update** (required for tools with self-update):
    ```bash
-   tool update --check                         # discover a new version
-   tool update --dry-run                        # preview binary/package + Skill sync
-   tool update --confirm ct_...                 # execute; result includes previous_version and skill_sync_status
+   tool update                                  # one call: verify + replace + Skill sync; result includes previous_version and skill_sync_status
    tool changelog --since <previous_version>    # learn "what's new" before continuing
    ```
+   `update` is a single command — no `--confirm` token, no leaf subcommands
+   (`--check` / `--dry-run` are optional read-only probes). See CLI-SPEC §14.
    Recipe rule: **after self-update, before continuing, ensure the whole Skill
    directory was synced and read the delta via `changelog --since`**, or you'll
    be blind to the new commands you just gained. Skill sync must have the same

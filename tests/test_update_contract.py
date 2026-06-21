@@ -1,0 +1,194 @@
+"""Single-command update contract (CLI-SPEC §14).
+
+Drives the `update` command in-process so we can inject staged failures and
+assert the failure/interruption envelope without a live release:
+
+- a bare `update` executes without a confirm token;
+- integrity failure is non-retryable E_INTEGRITY (exit 1);
+- a Skill-sync failure after a successful swap is partial success
+  (ok:false, binary_replaced:true, retryable);
+- replace-stage local failures map to E_IO / E_FORBIDDEN;
+- SIGINT during the update still emits a terminal JSON envelope (E_INTERRUPTED).
+"""
+
+import json
+from unittest import mock
+
+from click.testing import CliRunner
+
+from outlook_cli import output, updater
+from outlook_cli.main import update_cmd
+from outlook_cli.update_binary import IntegrityError, ReplaceError
+
+
+def _invoke(args, *, obj=None):
+    output.init(format_mode="json")
+    runner = CliRunner()
+    base = {"dry_run": False, "confirm": None, "quiet": True}
+    if obj:
+        base.update(obj)
+    return runner.invoke(update_cmd, args, obj=base, catch_exceptions=False)
+
+
+def _doc(result):
+    # CliRunner merges stdout (the JSON envelope) and stderr (a human line), so
+    # decode only the first JSON object and ignore any trailing stderr text.
+    text = result.output
+    start = text.find("{")
+    assert start >= 0, f"no JSON in output: {text!r}"
+    obj, _end = json.JSONDecoder().raw_decode(text[start:])
+    return obj
+
+
+def _not_on_target(monkeypatch):
+    """Force the idempotency probe to report an available newer release."""
+    monkeypatch.setattr(
+        "outlook_cli.main._already_on_target", lambda *_a, **_k: False
+    )
+
+
+def test_bare_update_executes_without_confirm_token(monkeypatch):
+    _not_on_target(monkeypatch)
+    monkeypatch.setattr(
+        updater,
+        "execute_update",
+        lambda *a, **k: {
+            "previous_version": "1.0.0",
+            "current_version": "2.0.0",
+            "install_method": "github-binary",
+            "stage": "skill_sync",
+            "binary_replaced": True,
+            "signature_status": "verified",
+            "skill_sync_status": "synced",
+            "updated": True,
+        },
+    )
+    # No --confirm anywhere; bare update must run and succeed.
+    result = _invoke([])
+    assert result.exit_code == 0, result.output
+    data = _doc(result)["data"]
+    assert data["binary_replaced"] is True
+    assert data["current_version"] == "2.0.0"
+
+
+def test_dry_run_issues_no_confirm_token(monkeypatch):
+    result = _invoke([], obj={"dry_run": True})
+    assert result.exit_code == 0, result.output
+    data = _doc(result)["data"]
+    assert "confirm_token" not in data
+    assert "expires_at" not in data
+    assert data["install_method"] == "github-binary"
+
+
+def test_integrity_failure_is_non_retryable(monkeypatch):
+    _not_on_target(monkeypatch)
+    monkeypatch.setattr(
+        updater.subprocess, "run", mock.Mock()
+    )  # must never be called
+    with mock.patch(
+        "outlook_cli.update_binary.perform_binary_update",
+        side_effect=IntegrityError("signature verification failed"),
+    ):
+        result = _invoke([])
+    assert result.exit_code == 1
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_INTEGRITY"
+    assert doc["error"]["retryable"] is False
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is False
+    assert details["current_version"]
+    assert "stage" in details
+
+
+def test_replace_io_failure_is_e_io(monkeypatch):
+    _not_on_target(monkeypatch)
+    with mock.patch(
+        "outlook_cli.update_binary.perform_binary_update",
+        side_effect=ReplaceError("disk full", "E_IO"),
+    ):
+        result = _invoke([])
+    assert result.exit_code == 1
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_IO"
+    assert doc["error"]["details"]["stage"] == "replace"
+    assert doc["error"]["details"]["binary_replaced"] is False
+
+
+def test_replace_permission_failure_is_e_forbidden(monkeypatch):
+    _not_on_target(monkeypatch)
+    with mock.patch(
+        "outlook_cli.update_binary.perform_binary_update",
+        side_effect=ReplaceError("permission denied", "E_FORBIDDEN"),
+    ):
+        result = _invoke([])
+    assert result.exit_code == 4
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_FORBIDDEN"
+    assert doc["error"]["details"]["stage"] == "replace"
+
+
+def test_skill_sync_failure_is_partial_success(monkeypatch):
+    _not_on_target(monkeypatch)
+    completed = mock.Mock(returncode=1, stdout="", stderr="npx not found")
+    with (
+        mock.patch(
+            "outlook_cli.update_binary.perform_binary_update",
+            return_value={
+                "status": "installed",
+                "signature_status": "verified",
+                "current_version": "2.0.0",
+            },
+        ),
+        mock.patch.object(updater.subprocess, "run", return_value=completed),
+    ):
+        result = _invoke([])
+    # Partial success: not exit 0 (it is not a clean success), but the envelope
+    # tells the agent the binary is already new and gives skill_sync_command.
+    doc = _doc(result)
+    assert doc["ok"] is False
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is True
+    assert details["skill_sync_status"] == "failed"
+    assert details["current_version"] == "2.0.0"
+    assert details["skill_sync_command"]
+    assert doc["error"]["retryable"] is True
+
+
+def test_download_failure_is_retryable_network(monkeypatch):
+    _not_on_target(monkeypatch)
+    with mock.patch(
+        "outlook_cli.update_binary.perform_binary_update",
+        side_effect=OSError("connection reset"),
+    ):
+        result = _invoke([])
+    assert result.exit_code == 7
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_NETWORK"
+    assert doc["error"]["retryable"] is True
+    assert doc["error"]["details"]["binary_replaced"] is False
+
+
+def test_interrupt_emits_terminal_envelope(monkeypatch):
+    _not_on_target(monkeypatch)
+    with mock.patch(
+        "outlook_cli.updater.execute_update",
+        side_effect=KeyboardInterrupt(),
+    ):
+        result = _invoke([])
+    assert result.exit_code == 130
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_INTERRUPTED"
+    assert doc["error"]["retryable"] is True
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is False
+    assert details["current_version"]
+
+
+def test_idempotent_no_op_when_already_on_target():
+    # target-version equals the running version -> no-op success, no swap.
+    result = _invoke(["--target-version", updater.__version__])
+    assert result.exit_code == 0, result.output
+    data = _doc(result)["data"]
+    assert data["noop"] is True
+    assert data["updated"] is False
+    assert data["binary_replaced"] is False
