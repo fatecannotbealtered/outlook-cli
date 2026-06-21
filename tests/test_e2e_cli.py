@@ -444,9 +444,7 @@ class TestUpdateCommand:
         # A bare `update` must run the whole pipeline in one call — no confirm
         # gate. We force an already-on-target no-op so no network/binary swap
         # happens, proving the command executes directly (exit 0, no E_CONFIRM).
-        code, stdout, _ = run_cli(
-            "update", "--target-version", _running_version(), "--compact"
-        )
+        code, stdout, _ = run_cli("update", "--target-version", _running_version(), "--compact")
         assert code == 0
         data = data_doc(stdout)
         assert data["noop"] is True
@@ -454,9 +452,7 @@ class TestUpdateCommand:
         assert data["binary_replaced"] is False
 
     def test_update_idempotent_already_on_target(self):
-        code, stdout, _ = run_cli(
-            "update", "--target-version", _running_version(), "--compact"
-        )
+        code, stdout, _ = run_cli("update", "--target-version", _running_version(), "--compact")
         assert code == 0
         data = data_doc(stdout)
         assert data["current_version"] == _running_version()

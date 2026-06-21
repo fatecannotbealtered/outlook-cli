@@ -42,9 +42,7 @@ def _doc(result):
 
 def _not_on_target(monkeypatch):
     """Force the idempotency probe to report an available newer release."""
-    monkeypatch.setattr(
-        "outlook_cli.main._already_on_target", lambda *_a, **_k: False
-    )
+    monkeypatch.setattr("outlook_cli.main._already_on_target", lambda *_a, **_k: False)
 
 
 def test_bare_update_executes_without_confirm_token(monkeypatch):
@@ -82,9 +80,7 @@ def test_dry_run_issues_no_confirm_token(monkeypatch):
 
 def test_integrity_failure_is_non_retryable(monkeypatch):
     _not_on_target(monkeypatch)
-    monkeypatch.setattr(
-        updater.subprocess, "run", mock.Mock()
-    )  # must never be called
+    monkeypatch.setattr(updater.subprocess, "run", mock.Mock())  # must never be called
     with mock.patch(
         "outlook_cli.update_binary.perform_binary_update",
         side_effect=IntegrityError("signature verification failed"),

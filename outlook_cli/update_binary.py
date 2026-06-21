@@ -257,9 +257,7 @@ def perform_binary_update(target_version: str) -> dict:
             f"permission denied replacing {target_path}: {exc}", "E_FORBIDDEN"
         ) from exc
     except OSError as exc:
-        raise ReplaceError(
-            f"failed to write or replace {target_path}: {exc}", "E_IO"
-        ) from exc
+        raise ReplaceError(f"failed to write or replace {target_path}: {exc}", "E_IO") from exc
     return {
         "status": status,
         "signature_status": "verified",
