@@ -83,6 +83,10 @@ Conventions:
 - `meta.duration_ms` records command execution time. `meta` is always emitted on
   every response (success and error); do not mark it `omitempty`, since
   `duration_ms: 0` is a valid value the agent should always be able to read.
+- `meta.notices[]` (optional) MAY carry ambient operational notices — currently
+  the update-available notice — read **only from the local cache**, never via a
+  network call. Each notice has a `severity` (`info` | `warning` | `critical`).
+  Omit the field when there is nothing to report. See §14.
 - A breaking schema change must bump the `schema_version` major version.
 
 ## 4. stdout / stderr rules
@@ -673,10 +677,25 @@ Version notification contract:
   make `doctor` fail by itself.
 - `context` and `--help` only read the local cache and must not contact remote
   registries or GitHub.
-- When an update is available, JSON command data includes `notices[]` with
-  `type: "update_available"`, current/latest versions, install method,
-  `recommended_command`, release URL when known, checked-at timestamp, and
-  machine-readable next steps. Text/help output may append one concise hint.
+- The cached notice MAY also be attached to **every command's `meta.notices`**,
+  read **only from the local cache** (no network; cost is one local file read).
+  Business commands surface the cached notice — they never actively check / phone
+  home. Omit `meta.notices` when the cache has nothing to report.
+- When an update is available, the notice carries `type: "update_available"`,
+  `severity`, current/latest versions, install method, `recommended_command`,
+  release URL when known, checked-at timestamp, and machine-readable next steps.
+  It appears in active-check command `data` (`context` / `doctor` / `update
+  --check`) and, read-only from cache, in any command's `meta.notices`. Text/help
+  output may append one concise hint.
+- **Severity grading** — computed at check time from the embedded CHANGELOG delta
+  between the running version and the latest, and stored in the cache so the
+  cached `meta.notices` carries the right level:
+  - `info` (default): routine patch/minor with no security entry.
+  - `warning`: the changelog delta since the running version contains a
+    `security` entry, OR the latest crosses a **major** version (first semver
+    component increased) — i.e. likely security-relevant or breaking.
+  - `critical`: reserved for a running version that is known-yanked or
+    known-vulnerable (not derived from the changelog delta).
 
 Release verification baseline:
 

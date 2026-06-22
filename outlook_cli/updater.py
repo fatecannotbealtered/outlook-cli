@@ -109,12 +109,31 @@ def refresh_update_notices(manager: str, source: str, timeout: float = 2.0) -> l
     return notices
 
 
+def grade_update_severity(current: str, latest: str) -> str:
+    """Grade an available update from the embedded CHANGELOG delta.
+
+    `warning` when the delta since the running version contains a `security`
+    entry, or the latest crosses a major version; otherwise `info`. `critical`
+    is reserved and never derived from the changelog delta."""
+    from .changelog import _version_key, entries_since
+
+    if _version_key(latest)[0] > _version_key(current)[0]:
+        return "warning"
+    for entry in entries_since(current):
+        if entry["version"].lower() == "unreleased":
+            continue
+        if entry["changes"].get("security"):
+            return "warning"
+    return "info"
+
+
 def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict[str, Any]]:
     """Convert update status data into Agent-facing notices."""
     if not status.get("update_available"):
         return []
     current = str(status.get("current_version") or __version__)
     latest = str(status.get("latest_version") or status.get("target_version") or "")
+    severity = grade_update_severity(current, latest)
     default_command = "outlook-cli update --compact"
     command = status.get("command") or []
     if isinstance(command, list):
@@ -124,7 +143,7 @@ def update_notices_from_status(status: dict[str, Any], source: str) -> list[dict
     return [
         {
             "type": "update_available",
-            "severity": "info",
+            "severity": severity,
             "message": f"outlook-cli {latest} is available (current {current})",
             "current_version": current,
             "latest_version": latest,

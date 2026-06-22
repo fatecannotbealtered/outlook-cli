@@ -209,9 +209,24 @@ def apply_fields(data: Any) -> Any:
     return selected
 
 
+def _attach_cached_notices(meta: dict[str, Any]) -> dict[str, Any]:
+    """Attach the cached update notice to meta.notices, read-only (no network).
+
+    Omitted entirely when the local cache holds nothing to report. The cache
+    reader is already TTL-bounded and does no network I/O.
+    """
+    from .updater import read_cached_update_notices
+
+    notices = read_cached_update_notices()
+    if notices:
+        meta["notices"] = notices
+    return meta
+
+
 def success_envelope(data: Any, meta: dict[str, Any] | None = None) -> dict[str, Any]:
     if meta is None:
         meta = {"duration_ms": int((time.monotonic() - _started_at) * 1000)}
+    _attach_cached_notices(meta)
     return {
         "ok": True,
         "schema_version": SCHEMA_VERSION,

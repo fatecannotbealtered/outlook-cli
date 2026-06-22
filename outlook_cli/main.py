@@ -438,7 +438,7 @@ def reference_cmd():
                 "ok": "boolean",
                 "schema_version": "string",
                 "data": "object",
-                "meta": {"duration_ms": "integer"},
+                "meta": {"duration_ms": "integer", "notices": "array (cached, omitempty)"},
                 "error": {
                     "code": "E_*",
                     "message": "string",

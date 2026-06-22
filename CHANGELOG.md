@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [1.1.8] - 2026-06-22
+
+### Added
+
+- The cached update-available notice is now attached to **every command's `meta.notices`** (read-only from the local TTL-bounded cache, no network I/O), omitted when the cache has nothing to report. The fresh/active view still appears in `data.notices` on `context`, `doctor`, and `update --check`.
+- Update notices are now **severity-graded** from the embedded CHANGELOG delta between the running version and the latest: `warning` when the delta contains a `security` entry or the latest crosses a major version, otherwise `info` (graded at check time and stored in the cache). `critical` remains reserved.
+
 ## [1.1.7] - 2026-06-21
 
 ### Changed

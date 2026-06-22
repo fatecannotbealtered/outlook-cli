@@ -4,7 +4,7 @@ from unittest import mock
 
 import pytest
 
-from outlook_cli import update_binary, updater
+from outlook_cli import changelog, update_binary, updater
 from outlook_cli.update_binary import IntegrityError
 
 
@@ -167,3 +167,48 @@ def test_verify_checksum_detects_mismatch():
     checksums = "0000  outlook-cli-1-linux-amd64.tar.gz\n"
     with pytest.raises(IntegrityError, match="checksum mismatch"):
         update_binary.verify_checksum(archive, checksums, "outlook-cli-1-linux-amd64.tar.gz")
+
+
+# --- severity grading from the embedded CHANGELOG delta (CLI-SPEC §14) ---
+
+
+def _entry(version, **categories):
+    changes = {
+        name: [] for name in ("added", "changed", "deprecated", "fixed", "removed", "security")
+    }
+    changes.update(categories)
+    return {"version": version, "date": "", "changes": changes}
+
+
+def test_severity_warning_when_delta_has_security_entry(monkeypatch):
+    monkeypatch.setattr(
+        changelog, "entries_since", lambda since=None: [_entry("1.0.1", security=["CVE fix"])]
+    )
+    assert updater.grade_update_severity("1.0.0", "1.0.1") == "warning"
+
+
+def test_severity_warning_on_major_bump(monkeypatch):
+    monkeypatch.setattr(changelog, "entries_since", lambda since=None: [_entry("2.0.0")])
+    assert updater.grade_update_severity("1.5.0", "2.0.0") == "warning"
+
+
+def test_severity_info_for_plain_patch(monkeypatch):
+    monkeypatch.setattr(
+        changelog, "entries_since", lambda since=None: [_entry("1.0.1", fixed=["small fix"])]
+    )
+    assert updater.grade_update_severity("1.0.0", "1.0.1") == "info"
+
+
+def test_notices_carry_graded_severity(monkeypatch):
+    monkeypatch.setattr(
+        changelog, "entries_since", lambda since=None: [_entry("1.0.1", security=["CVE fix"])]
+    )
+    status = {
+        "update_available": True,
+        "current_version": "1.0.0",
+        "latest_version": "1.0.1",
+        "install_method": "github-binary",
+        "command": ["outlook-cli", "update"],
+    }
+    notices = updater.update_notices_from_status(status, "update_check")
+    assert notices[0]["severity"] == "warning"

@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.7"
+version: "1.1.8"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.7"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.8"}}
 ---
 
 # outlook-cli
@@ -171,6 +171,13 @@ Failure / interruption: every update failure envelope carries `stage`,
 - `E_INTERRUPTED` (exit 130) means a signal cancelled the run; the envelope
   states the true post-state. Before the swap: no change, still on the old
   version.
+
+When an update is available, the notice also rides on every command's
+`meta.notices` (read-only from the local cache, no network). It is omitted when
+the cache has nothing to report. The notice is severity-graded: `warning` when
+the changelog delta since the running version has a `security` entry or crosses
+a major version, otherwise `info`. The fresh/active view still appears in
+`data.notices` on `context`, `doctor`, and `update --check`.
 
 ## Playbooks
 

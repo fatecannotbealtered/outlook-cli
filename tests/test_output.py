@@ -4,7 +4,7 @@ import json
 
 import pytest
 
-from outlook_cli import output
+from outlook_cli import output, updater
 
 
 @pytest.fixture(autouse=True)
@@ -282,3 +282,53 @@ def test_error_json_pretty_by_default(capsys):
     out = capsys.readouterr().out
     assert "\n  " in out  # indented (pretty) output
     assert json.loads(out[out.find("{") :])["error"]["code"] == "E_VALIDATION"
+
+
+# --- meta.notices piggyback: cached update notice rides on every command ---
+
+
+def _cached_notice():
+    return [
+        {
+            "type": "update_available",
+            "update_available": True,
+            "severity": "info",
+            "current_version": "1.0.0",
+            "latest_version": "1.0.1",
+            "source": "cache",
+        }
+    ]
+
+
+def test_meta_notices_present_when_cache_has_update(monkeypatch, capsys):
+    # An arbitrary (non-update) command's envelope carries the cached notice
+    # under meta.notices when the local cache holds an available update.
+    monkeypatch.setattr(updater, "read_cached_update_notices", _cached_notice)
+    output.init(json_mode=True, quiet=False)
+    output.print_json({"any": "payload"})
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["meta"]["notices"][0]["type"] == "update_available"
+    assert parsed["meta"]["notices"][0]["severity"] == "info"
+
+
+def test_meta_notices_absent_when_cache_empty(monkeypatch, capsys):
+    # No cached update -> meta.notices is omitted entirely (omitempty).
+    monkeypatch.setattr(updater, "read_cached_update_notices", lambda: [])
+    output.init(json_mode=True, quiet=False)
+    output.print_json({"any": "payload"})
+    parsed = json.loads(capsys.readouterr().out)
+    assert "notices" not in parsed["meta"]
+
+
+def test_meta_notices_makes_no_network_call(monkeypatch, capsys):
+    # The piggyback path reads only the local cache; it must never hit the
+    # network. Wire the real reader (returns [] under pytest) and assert the
+    # http seam is never touched.
+    def _boom(*args, **kwargs):
+        raise AssertionError("piggyback path made a network call")
+
+    monkeypatch.setattr(updater.urllib.request, "urlopen", _boom)
+    output.init(json_mode=True, quiet=False)
+    output.print_json({"any": "payload"})
+    parsed = json.loads(capsys.readouterr().out)
+    assert "notices" not in parsed["meta"]
