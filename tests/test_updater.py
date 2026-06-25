@@ -186,9 +186,7 @@ def test_execute_update_skill_sync_npx_missing_is_partial_success():
                 "current_version": "2.0.1",
             },
         ),
-        mock.patch.object(
-            updater.subprocess, "run", side_effect=FileNotFoundError("npx")
-        ),
+        mock.patch.object(updater.subprocess, "run", side_effect=FileNotFoundError("npx")),
     ):
         with pytest.raises(updater.SkillSyncPartial) as excinfo:
             updater.execute_update("auto", "latest", quiet=True)

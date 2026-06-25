@@ -773,9 +773,7 @@ def _run_update_with_signal_trap(resolved_manager, target_version, quiet):
 
     try:
         try:
-            data = execute_update(
-                resolved_manager, target_version, quiet=quiet, progress=progress
-            )
+            data = execute_update(resolved_manager, target_version, quiet=quiet, progress=progress)
         except KeyboardInterrupt:
             # Report the TRUE post-interrupt state. Before the swap nothing is
             # committed (temp dir cleaned by replace_executable's own unwind);
