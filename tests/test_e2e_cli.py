@@ -437,8 +437,10 @@ class TestUpdateCommand:
         data = data_doc(stdout)
         assert "confirm_token" not in data
         assert "expires_at" not in data
-        assert data["install_method"] == "github-binary"
-        assert data["preview"]["changes"][0]["action"] == "download_verify_replace_binary"
+        assert data["install_method"] == "npm"
+        # Under --manager npm the dry-run preview drives the package manager
+        # (install + skill sync), not the standalone binary download/replace.
+        assert data["preview"]["changes"][0]["action"] == "package_manager_install"
 
     def test_bare_update_executes_without_a_token(self):
         # A bare `update` must run the whole pipeline in one call — no confirm

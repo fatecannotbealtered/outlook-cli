@@ -89,6 +89,7 @@ EXIT_CODE_BY_ERROR = {
     "E_TIMEOUT": 8,
     "E_INTEGRITY": 1,
     "E_IO": 1,
+    "E_UNKNOWN": 1,
     "E_INTERRUPTED": 130,
 }
 

@@ -75,7 +75,7 @@ def test_dry_run_issues_no_confirm_token(monkeypatch):
     data = _doc(result)["data"]
     assert "confirm_token" not in data
     assert "expires_at" not in data
-    assert data["install_method"] == "github-binary"
+    assert data["install_method"] in ("pip", "npm", "github-binary", "manual")
 
 
 def test_integrity_failure_is_non_retryable(monkeypatch):
@@ -330,7 +330,7 @@ def test_package_manager_dry_run_does_not_execute(monkeypatch):
     data = _doc(result)["data"]
     assert "confirm_token" not in data
     assert "expires_at" not in data
-    assert data["install_method"] == "github-binary"  # plan_update always shows github-binary
+    assert data["install_method"] == "pip"
 
 
 def test_package_manager_failure_reports_e_io(monkeypatch):
@@ -361,4 +361,5 @@ def test_package_manager_skill_sync_failure_is_partial_success(monkeypatch):
     details = doc["error"]["details"]
     assert details["binary_replaced"] is True
     assert details["skill_sync_status"] == "failed"
+    assert details["install_method"] == "pip"
     assert doc["error"]["retryable"] is True

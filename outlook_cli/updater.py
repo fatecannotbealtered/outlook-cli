@@ -263,23 +263,35 @@ def _run_package_manager_update(manager: str, target_version: str) -> subprocess
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     """Build a deterministic dry-run plan without touching the network."""
     skill_command = skill_sync_command()
+    install_method = manager if manager in ("pip", "npm") else "github-binary"
+    if manager in ("pip", "npm"):
+        pm_cmd = _package_manager_install_cmd(manager, target_version)
+        first_change = {
+            "action": "package_manager_install",
+            "detail": {
+                "command": shlex.join(str(c) for c in pm_cmd),
+                "install_method": install_method,
+            },
+        }
+    else:
+        first_change = {
+            "action": "download_verify_replace_binary",
+            "detail": {
+                "target_version": target_version,
+                "verification": "Sigstore signature + archive SHA256",
+            },
+        }
     return {
         "current_version": __version__,
         "target_version": target_version,
-        "install_method": "github-binary",
+        "install_method": install_method,
         "supported": True,
         "command": ["outlook-cli", "update"],
         "signature_status": "not_checked",
         "skill_sync_command": skill_command,
         "skill_sync_status": "not_run",
         "changes": [
-            {
-                "action": "download_verify_replace_binary",
-                "detail": {
-                    "target_version": target_version,
-                    "verification": "Sigstore signature + archive SHA256",
-                },
-            },
+            first_change,
             {
                 "action": "sync_skill",
                 "detail": {
@@ -350,6 +362,7 @@ def _execute_package_manager_update(
             previous_version=previous_version,
             current_version=target_version,
             skill_sync_command=skill_command_str,
+            install_method=manager,
             details={"command": skill_command, "error": str(exc)},
         ) from exc
 
@@ -360,6 +373,7 @@ def _execute_package_manager_update(
             previous_version=previous_version,
             current_version=target_version,
             skill_sync_command=skill_command_str,
+            install_method=manager,
             details={
                 "command": skill_command,
                 "returncode": skill_result.returncode,
@@ -619,12 +633,14 @@ class SkillSyncPartial(Exception):
         previous_version: str,
         current_version: str,
         skill_sync_command: str,
+        install_method: str = "github-binary",
         details: dict[str, Any] | None = None,
     ):
         super().__init__(message)
         self.previous_version = previous_version
         self.current_version = current_version
         self.skill_sync_command = skill_sync_command
+        self.install_method = install_method
         self.details = dict(details or {})
 
     def data(self) -> dict[str, Any]:
@@ -633,7 +649,7 @@ class SkillSyncPartial(Exception):
             "previous_version": self.previous_version,
             "current_version": self.current_version,
             "target_version": "",
-            "install_method": "github-binary",
+            "install_method": self.install_method,
             "stage": "skill_sync",
             "binary_replaced": True,
             "skill_sync_status": "failed",
