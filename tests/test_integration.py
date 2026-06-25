@@ -909,7 +909,7 @@ class TestStep7Tools:
         """[tools contacts --query] Search by name keyword."""
         # Extract name part from email (before @) as search query
         email = os.environ["OUTLOOK_IT_EMAIL"]
-        query = email.split("@")[0].split(".")[0]  # e.g. "song" from "jane.doe@example.com"
+        query = email.split("@")[0].split(".")[0]  # e.g. "jane" from "jane.doe@example.com"
         code, stdout, stderr = run_cli("tools", "contacts", "--query", query)
         # Should succeed (may return 0 or more results)
         assert code == 0, f"Exit {code}: {stderr}"
