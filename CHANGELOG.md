@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.10] - 2026-06-25
+
 ### Added
 
 - Contract single-source: `outlook_cli/contract_gen.py` is now generated from `contract/contract.json` (vendored from `ai-native-cli-spec@v1.4`) via `node scripts/gen-contract.js --lang py`. `output.SCHEMA_VERSION`, `exit_code_for()`, and the `retryable` check in `error_envelope()` delegate to `contract_gen` so they cannot drift from the fleet contract.
