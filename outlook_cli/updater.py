@@ -113,8 +113,7 @@ def grade_update_severity(current: str, latest: str) -> str:
     """Grade an available update from the embedded CHANGELOG delta.
 
     `warning` when the delta since the running version contains a `security`
-    entry, or the latest crosses a major version; otherwise `info`. `critical`
-    is reserved and never derived from the changelog delta."""
+    entry, or the latest crosses a major version; otherwise `info`."""
     from .changelog import _version_key, entries_since
 
     if _version_key(latest)[0] > _version_key(current)[0]:
@@ -273,12 +272,36 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     }
 
 
-def execute_update(manager: str, target_version: str, quiet: bool = False) -> dict[str, Any]:
+class UpdateProgress:
+    """Live post-failure state of a staged update.
+
+    Updated by `execute_update` as each stage begins and once the binary swap
+    commits, so a SIGINT/SIGTERM handler interrupting mid-flight can report the
+    TRUE stage, version, and whether the binary was already replaced — instead
+    of hardcoding `download`/old-version and risking a misstated version
+    (CLI-SPEC §14 hard rule #1)."""
+
+    def __init__(self) -> None:
+        self.stage: str = "discover"
+        self.binary_replaced: bool = False
+        self.current_version: str = __version__
+
+
+def execute_update(
+    manager: str,
+    target_version: str,
+    quiet: bool = False,
+    progress: UpdateProgress | None = None,
+) -> dict[str, Any]:
     """Run the staged self-update: discover -> download -> verify_signature ->
     verify_checksum -> replace -> skill_sync, then sync the Skill directory.
 
     On success returns a result dict carrying the stage invariant fields
     (`stage`, `current_version`, `binary_replaced`, `skill_sync_status`).
+
+    `progress`, when given, is updated as each stage begins and once the binary
+    swap commits, so a SIGINT handler can report the TRUE post-failure state
+    (which stage, which version, binary replaced or not) instead of guessing.
 
     Raises StageError on every failure, classified by the agent's next action:
     integrity failures are non-retryable E_INTEGRITY; replace-stage local
@@ -290,10 +313,15 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
     previous_version = __version__
     skill_command = skill_sync_command()
     skill_command_str = shlex.join(skill_command)
+    if progress is None:
+        progress = UpdateProgress()
+
+    def _on_stage(name: str) -> None:
+        progress.stage = name
 
     # --- Stages BEFORE the swap: any failure leaves the old binary intact. ---
     try:
-        result = perform_binary_update(target_version)
+        result = perform_binary_update(target_version, on_stage=_on_stage)
     except IntegrityError as exc:
         # Could be discover (missing asset/tag) or verify (signature/checksum).
         # Either way it is a non-retryable integrity refusal: old version stays.
@@ -334,7 +362,33 @@ def execute_update(manager: str, target_version: str, quiet: bool = False) -> di
 
     # --- After the atomic swap: the binary is NEW; Skill sync is replayable. ---
     new_version = result["current_version"]
-    skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
+    progress.stage = "skill_sync"
+    progress.binary_replaced = True
+    progress.current_version = new_version
+    try:
+        skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
+    except FileNotFoundError as exc:
+        # `npx` is not installed: the binary is already on the new version, only
+        # the Skill is stale. This is a PARTIAL SUCCESS, not E_SERVER — the agent
+        # must run skill_sync_command, not loop on a server error.
+        raise SkillSyncPartial(
+            f"binary updated to {new_version}; Skill sync failed (npx not found) — "
+            f"run `{skill_command_str}`, then changelog --since {previous_version}",
+            previous_version=previous_version,
+            current_version=new_version,
+            skill_sync_command=skill_command_str,
+            details={"command": skill_command, "error": str(exc)},
+        ) from exc
+    except subprocess.TimeoutExpired as exc:
+        # Skill sync timed out post-swap: still a partial success, replayable.
+        raise SkillSyncPartial(
+            f"binary updated to {new_version}; Skill sync timed out — "
+            f"run `{skill_command_str}`, then changelog --since {previous_version}",
+            previous_version=previous_version,
+            current_version=new_version,
+            skill_sync_command=skill_command_str,
+            details={"command": skill_command, "error": str(exc)},
+        ) from exc
     if not quiet:
         if skill_result.stdout:
             print(

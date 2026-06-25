@@ -742,11 +742,20 @@ def _run_update_with_signal_trap(resolved_manager, target_version, quiet):
     """Execute the staged update, trapping SIGINT/SIGTERM so the agent always
     receives a terminal JSON envelope (E_INTERRUPTED, exit 130) instead of a
     bare killed process."""
+    import shlex
     import signal
 
-    from .updater import SkillSyncPartial, StageError, UpdateUnsupported, execute_update
+    from .updater import (
+        SkillSyncPartial,
+        StageError,
+        UpdateProgress,
+        UpdateUnsupported,
+        execute_update,
+        skill_sync_command,
+    )
 
     previous_version = __version__
+    progress = UpdateProgress()
 
     def _on_signal(signum, _frame):
         raise KeyboardInterrupt()
@@ -764,18 +773,40 @@ def _run_update_with_signal_trap(resolved_manager, target_version, quiet):
 
     try:
         try:
-            data = execute_update(resolved_manager, target_version, quiet=quiet)
+            data = execute_update(
+                resolved_manager, target_version, quiet=quiet, progress=progress
+            )
         except KeyboardInterrupt:
-            # Before the swap nothing is committed; the temp dir is always
-            # cleaned by replace_executable's own unwind. Still emit a terminal
-            # envelope so the agent never sees a bare kill.
+            # Report the TRUE post-interrupt state. Before the swap nothing is
+            # committed (temp dir cleaned by replace_executable's own unwind);
+            # after the swap the binary is already the new version and only the
+            # Skill is stale. Never misstate the version (CLI-SPEC §14 rule #1).
+            if progress.binary_replaced:
+                output.error_json(
+                    f"update interrupted after the binary swap — now on "
+                    f"{progress.current_version}; Skill sync did not complete. "
+                    f"Run `{shlex.join(skill_sync_command())}`, then "
+                    f"changelog --since {previous_version}",
+                    "E_INTERRUPTED",
+                    details={
+                        "command": "update",
+                        "stage": "skill_sync",
+                        "previous_version": previous_version,
+                        "current_version": progress.current_version,
+                        "binary_replaced": True,
+                        "skill_sync_status": "failed",
+                        "skill_sync_command": shlex.join(skill_sync_command()),
+                    },
+                    retryable=True,
+                )
+                sys.exit(output.exit_code_for("E_INTERRUPTED"))
             output.handle_error(
-                f"update cancelled — no change, still on {previous_version}",
+                f"update cancelled — no change, still on {progress.current_version}",
                 "E_INTERRUPTED",
                 details={
                     "command": "update",
-                    "stage": "download",
-                    "current_version": previous_version,
+                    "stage": progress.stage,
+                    "current_version": progress.current_version,
                     "binary_replaced": False,
                     "skill_sync_status": "not_run",
                 },

@@ -17,7 +17,6 @@ import platform
 import stat
 import sys
 import tarfile
-import tempfile
 import urllib.error
 import urllib.request
 import zipfile
@@ -174,56 +173,93 @@ def extract_binary(archive_bytes: bytes, is_zip: bool) -> bytes:
                 if member.isfile() and Path(member.name).name == want:
                     fh = tf.extractfile(member)
                     if fh is not None:
-                        return fh.read()
+                        with fh:
+                            return fh.read()
     raise IntegrityError(f"{want} not found in release archive")
 
 
 def replace_executable(target: Path, new_bytes: bytes) -> str:
-    """Replace the running executable with new_bytes. Returns 'installed' (posix,
-    atomic) or 'scheduled' (windows, swapped by a helper after the process exits)."""
+    """Replace the running executable with new_bytes in place, atomically.
+
+    Uses the same cross-platform rename trick on every OS: write `.<name>.new`,
+    rename the in-use binary out of the way to `.<name>.old`, rename `.new` into
+    place, roll back from `.old` on failure, then remove `.old`. On Windows the
+    running .exe cannot be deleted or overwritten, but it CAN be renamed, so
+    moving it to `.old` frees the path and lets `.new` land — no helper script,
+    no restart. Returns 'installed' on success."""
     target = Path(target)
-    if os.name == "nt":
-        pending = target.with_name(target.name + ".new")
-        pending.write_bytes(new_bytes)
-        script = target.with_name(f".{target.name}.update.cmd")
-        script.write_text(
-            "@echo off\r\nsetlocal\r\n"
-            f'set "PENDING={pending}"\r\n'
-            f'set "TARGET={target}"\r\n'
-            "for /L %%I in (1,1,30) do (\r\n"
-            '  move /Y "%PENDING%" "%TARGET%" > nul 2>&1\r\n'
-            '  if not exist "%PENDING%" goto done\r\n'
-            "  ping 127.0.0.1 -n 2 > nul\r\n"
-            ")\r\n:done\r\n"
-            'del "%~f0" > nul 2>&1\r\n',
-            encoding="utf-8",
-        )
-        os.startfile(str(script))  # noqa: S606 - launches the swap helper
-        return "scheduled"
-    fd, tmp = tempfile.mkstemp(dir=str(target.parent), prefix="." + target.name + ".update-")
+    # Resolve symlinks so we replace the real file, not the link itself — a
+    # self-update reached through a /usr/local/bin symlink (e.g. into a cellar)
+    # must clobber the target binary, not the link. Matches the jira reference's
+    # filepath.EvalSymlinks; os.path.realpath is best-effort and never raises.
+    target = Path(os.path.realpath(target))
+    new_path = target.with_name("." + target.name + ".new")
+    backup_path = target.with_name("." + target.name + ".old")
+
+    mode = target.stat().st_mode if target.exists() else 0o755
+
+    if new_path.exists():
+        os.remove(new_path)
+
+    # Stage the verified bytes into `.new`. Any failure or interrupt (incl.
+    # SIGINT->KeyboardInterrupt, a BaseException) before the binary is renamed
+    # out of the way must leave no half-written `.new` behind — the swap has not
+    # committed, so the temp artifact is never trusted by a later run.
     try:
-        with os.fdopen(fd, "wb") as fh:
-            fh.write(new_bytes)
-        mode = target.stat().st_mode if target.exists() else 0o755
-        os.chmod(tmp, mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
-        os.replace(tmp, target)
+        new_path.write_bytes(new_bytes)
+        os.chmod(new_path, (mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH) & 0o7777)
+
+        if backup_path.exists():
+            try:
+                os.remove(backup_path)
+            except OSError:
+                pass
+        os.rename(target, backup_path)
     except BaseException:
         try:
-            os.unlink(tmp)
+            os.remove(new_path)
         except OSError:
             pass
         raise
+    try:
+        os.rename(new_path, target)
+    except BaseException:
+        # Restore the original and discard the staged replacement so no
+        # half-applied `.new` survives a failed/interrupted final swap.
+        os.rename(backup_path, target)
+        try:
+            os.remove(new_path)
+        except OSError:
+            pass
+        raise
+    # Best effort: on Windows the old binary may still be mapped by the running
+    # process and undeletable — that is fine, it no longer occupies the path.
+    try:
+        os.remove(backup_path)
+    except OSError:
+        pass
     return "installed"
 
 
-def perform_binary_update(target_version: str) -> dict:
+def perform_binary_update(target_version: str, on_stage=None) -> dict:
     """Download, verify (signature + checksum), and install the target release.
 
     Returns a result dict with status / signature_status. Raises IntegrityError on
     any supply-chain failure (non-retryable) or other Exception on transport
-    failures (retryable)."""
+    failures (retryable).
+
+    `on_stage`, when given, is called with the current stage name
+    (`discover|download|verify_signature|verify_checksum|replace`) as each phase
+    begins, so the caller can attribute an interrupt to the stage it actually
+    fell in (truthful post-failure state, CLI-SPEC §14)."""
+
+    def _stage(name: str) -> None:
+        if on_stage is not None:
+            on_stage(name)
+
     target_path = Path(sys.executable)
 
+    _stage("discover")
     release = fetch_release(target_version)
     resolved = normalize_version(release["tag_name"])
     asset_name, is_zip = platform_asset_name(resolved)
@@ -241,15 +277,19 @@ def perform_binary_update(target_version: str) -> dict:
             "refusing to install an unsigned release"
         )
 
+    _stage("download")
     archive_bytes = _http_get(archive_link, "application/octet-stream")
     checksums_bytes = _http_get(checksums_link, "text/plain", max_bytes=1024 * 1024)
     bundle_bytes = _http_get(bundle_link, "application/json", max_bytes=1024 * 1024)
 
     # Verify the signature on checksums.txt first, then bind the archive to it.
+    _stage("verify_signature")
     verify_signature(checksums_bytes, bundle_bytes, signer_identity(resolved))
+    _stage("verify_checksum")
     verify_checksum(archive_bytes, checksums_bytes.decode("utf-8", "replace"), asset_name)
 
     new_binary = extract_binary(archive_bytes, is_zip)
+    _stage("replace")
     try:
         status = replace_executable(target_path, new_binary)
     except PermissionError as exc:

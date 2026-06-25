@@ -180,6 +180,84 @@ def test_interrupt_emits_terminal_envelope(monkeypatch):
     assert details["current_version"]
 
 
+def test_interrupt_after_swap_reports_new_version_and_partial(monkeypatch):
+    # An interrupt that lands AFTER the binary swap must not claim "no change,
+    # still on old": it must report binary_replaced=true, the NEW version, and a
+    # skill_sync_command (CLI-SPEC §14 hard rule #1: never misstate the version).
+    from outlook_cli import updater
+
+    def _interrupt_after_swap(manager, target_version, quiet=False, progress=None):
+        # Simulate the swap committing before the interrupt fires.
+        progress.stage = "skill_sync"
+        progress.binary_replaced = True
+        progress.current_version = "2.0.0"
+        raise KeyboardInterrupt()
+
+    _not_on_target(monkeypatch)
+    monkeypatch.setattr(updater, "execute_update", _interrupt_after_swap)
+    result = _invoke([])
+    assert result.exit_code == 130
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_INTERRUPTED"
+    assert doc["error"]["retryable"] is True
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is True
+    assert details["current_version"] == "2.0.0"
+    assert details["skill_sync_status"] == "failed"
+    assert details["skill_sync_command"]
+
+
+def test_interrupt_during_verify_is_interrupted_not_integrity(monkeypatch):
+    # A SIGINT landing in the verify stage must be E_INTERRUPTED (retryable, exit
+    # 130), reported at the verify stage with the old version intact — never
+    # misclassified as a non-retryable E_INTEGRITY.
+    from outlook_cli import update_binary
+
+    def _interrupt_in_verify(target, on_stage=None):
+        on_stage("discover")
+        on_stage("download")
+        on_stage("verify_signature")
+        raise KeyboardInterrupt()
+
+    _not_on_target(monkeypatch)
+    monkeypatch.setattr(update_binary, "perform_binary_update", _interrupt_in_verify)
+    result = _invoke([])
+    assert result.exit_code == 130
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_INTERRUPTED"
+    assert doc["error"]["retryable"] is True
+    details = doc["error"]["details"]
+    assert details["stage"] == "verify_signature"
+    assert details["binary_replaced"] is False
+    assert details["current_version"] == updater.__version__
+
+
+def test_skill_sync_npx_missing_surfaces_partial_not_server_error(monkeypatch):
+    # FileNotFoundError from `npx` must surface as partial success (ok:false,
+    # binary_replaced:true, retryable), NOT a catch-all E_SERVER exit.
+    _not_on_target(monkeypatch)
+    with (
+        mock.patch(
+            "outlook_cli.update_binary.perform_binary_update",
+            return_value={
+                "status": "installed",
+                "signature_status": "verified",
+                "current_version": "2.0.0",
+            },
+        ),
+        mock.patch.object(updater.subprocess, "run", side_effect=FileNotFoundError("npx")),
+    ):
+        result = _invoke([])
+    doc = _doc(result)
+    assert doc["ok"] is False
+    assert doc["error"]["code"] != "E_SERVER"
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is True
+    assert details["skill_sync_status"] == "failed"
+    assert details["current_version"] == "2.0.0"
+    assert doc["error"]["retryable"] is True
+
+
 def test_idempotent_no_op_when_already_on_target():
     # target-version equals the running version -> no-op success, no swap.
     result = _invoke(["--target-version", updater.__version__])

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.9] - 2026-06-25
+
+### Changed
+
+- Windows binary self-update now performs the same in-place atomic **rename trick** used on POSIX instead of writing a `.cmd` helper that swapped the binary on the next restart. `update` writes `.<name>.new`, renames the running binary out of the way to `.<name>.old`, renames `.new` into place, rolls back from `.old` on failure, and removes `.old` (ignored if still mapped by the running process). The swap now completes in-process and returns `status: "installed"` on every OS — Windows no longer returns a `scheduled`/restart-pending state.
+
+### Fixed
+
+- A failed/interrupted Skill sync during `update` is no longer misreported as a server error. `npx` missing (`FileNotFoundError`) or the Skill sync timing out (`subprocess.TimeoutExpired`) after the binary swap now surface as a PARTIAL SUCCESS (`ok:false`, `binary_replaced:true`, retryable) with `skill_sync_command` and `skill_sync_status: "failed"`, instead of escaping to a catch-all `E_SERVER`.
+- A SIGINT/SIGTERM that lands **after** the binary swap no longer misstates the version. The interrupt handler now reports the true post-failure state — the actual stage, the new `current_version`, `binary_replaced: true`, and the `skill_sync_command` to finish — instead of hardcoding `stage: download` and the old version (CLI-SPEC §14 rule #1: never misstate the version).
+- An interrupt during the verify stage is now classified as `E_INTERRUPTED` (retryable, exit 130) at the correct stage, never as a non-retryable `E_INTEGRITY`; transient network failures fetching verification material stay `E_NETWORK`.
+- `replace_executable` now cleans up the half-written `.<name>.new` staging file on any failure or interrupt before the swap commits, so a later run never trusts a leftover artifact. `extract_binary` now closes the `tarfile` member handle returned by `extractfile()`, fixing a file-handle leak.
+
 ## [1.1.8] - 2026-06-22
 
 ### Added

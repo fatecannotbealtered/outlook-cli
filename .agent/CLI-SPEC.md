@@ -85,7 +85,7 @@ Conventions:
   `duration_ms: 0` is a valid value the agent should always be able to read.
 - `meta.notices[]` (optional) MAY carry ambient operational notices — currently
   the update-available notice — read **only from the local cache**, never via a
-  network call. Each notice has a `severity` (`info` | `warning` | `critical`).
+  network call. Each notice has a `severity` (`info` | `warning`).
   Omit the field when there is nothing to report. See §14.
 - A breaking schema change must bump the `schema_version` major version.
 
@@ -694,8 +694,6 @@ Version notification contract:
   - `warning`: the changelog delta since the running version contains a
     `security` entry, OR the latest crosses a **major** version (first semver
     component increased) — i.e. likely security-relevant or breaking.
-  - `critical`: reserved for a running version that is known-yanked or
-    known-vulnerable (not derived from the changelog delta).
 
 Release verification baseline:
 
@@ -738,11 +736,16 @@ atomic commit point. The invariant that makes every failure message honest:
 - Everything BEFORE the binary swap touches only a temp dir; any failure or
   interruption there leaves the installed binary untouched and fully usable
   (`current_version` unchanged, `binary_replaced: false`).
-- The swap itself is atomic (verify in temp → same-filesystem rename; on Windows
-  stage `<bin>.new` + replace-on-restart, and a later `update` cleans any stale
-  staged file and re-verifies from scratch — a leftover temp artifact is never
-  trusted). A crash mid-swap leaves either the old or the new binary, never a
-  hybrid.
+- The swap itself is atomic. On Windows a running executable can be renamed but
+  not overwritten, so the verified `<bin>.new` is moved into place by renaming the
+  in-use binary aside to `<bin>.old`, then renaming `<bin>.new` onto the real path
+  — the new binary is in place at once, `binary_replaced: true`, and the next
+  invocation runs the new version (no restart needed). The displaced `<bin>.old`
+  cannot be deleted while the old process is still running, so it is left in place
+  and cleaned up by the next `update`, which re-verifies any staged artifact from
+  scratch — a leftover is never trusted. On non-Windows the swap is a same-filesystem rename
+  of the verified binary into place. A crash mid-swap leaves either the old or the
+  new binary, never a hybrid.
 - Skill sync runs AFTER the swap and is independently replayable.
 
 So the tool can always determine — and MUST always report — its post-failure
