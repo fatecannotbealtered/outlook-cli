@@ -18,22 +18,22 @@ ALL_ERROR_CODES = list(output.EXIT_CODE_BY_ERROR.keys())
 # E_TIMEOUT=8 (retryable); E_INTEGRITY/E_IO/E_UNKNOWN=1;
 # E_INTERRUPTED=130 (retryable); non-retryable otherwise.
 _EXPECTED = {
-    "E_USAGE":                 {"exit": 2,   "retryable": False},
-    "E_VALIDATION":            {"exit": 2,   "retryable": False},
-    "E_NOT_FOUND":             {"exit": 3,   "retryable": False},
-    "E_AUTH":                  {"exit": 4,   "retryable": False},
-    "E_FORBIDDEN":             {"exit": 4,   "retryable": False},
-    "E_CONFIG":                {"exit": 4,   "retryable": False},
-    "E_CONFIRMATION_REQUIRED": {"exit": 5,   "retryable": False},
-    "E_CONFLICT":              {"exit": 6,   "retryable": False},
-    "E_NETWORK":               {"exit": 7,   "retryable": True},
-    "E_RATE_LIMITED":          {"exit": 7,   "retryable": True},
-    "E_SERVER":                {"exit": 7,   "retryable": True},
-    "E_TIMEOUT":               {"exit": 8,   "retryable": True},
-    "E_INTEGRITY":             {"exit": 1,   "retryable": False},
-    "E_IO":                    {"exit": 1,   "retryable": False},
-    "E_UNKNOWN":               {"exit": 1,   "retryable": False},
-    "E_INTERRUPTED":           {"exit": 130, "retryable": True},
+    "E_USAGE": {"exit": 2, "retryable": False},
+    "E_VALIDATION": {"exit": 2, "retryable": False},
+    "E_NOT_FOUND": {"exit": 3, "retryable": False},
+    "E_AUTH": {"exit": 4, "retryable": False},
+    "E_FORBIDDEN": {"exit": 4, "retryable": False},
+    "E_CONFIG": {"exit": 4, "retryable": False},
+    "E_CONFIRMATION_REQUIRED": {"exit": 5, "retryable": False},
+    "E_CONFLICT": {"exit": 6, "retryable": False},
+    "E_NETWORK": {"exit": 7, "retryable": True},
+    "E_RATE_LIMITED": {"exit": 7, "retryable": True},
+    "E_SERVER": {"exit": 7, "retryable": True},
+    "E_TIMEOUT": {"exit": 8, "retryable": True},
+    "E_INTEGRITY": {"exit": 1, "retryable": False},
+    "E_IO": {"exit": 1, "retryable": False},
+    "E_UNKNOWN": {"exit": 1, "retryable": False},
+    "E_INTERRUPTED": {"exit": 130, "retryable": True},
 }
 
 
@@ -42,9 +42,7 @@ def test_error_codes_in_contract():
     # Also cover codes in contract_gen.CODES that are not in EXIT_CODE_BY_ERROR
     all_codes = set(ALL_ERROR_CODES) | set(contract_gen.CODES.keys())
     for code in sorted(all_codes):
-        assert code in contract_gen.CODES, (
-            f"{code!r} is not in contract_gen.CODES (core∪ext)"
-        )
+        assert code in contract_gen.CODES, f"{code!r} is not in contract_gen.CODES (core∪ext)"
         spec = contract_gen.CODES[code]
         tool_exit = output.exit_code_for(code)
         assert tool_exit == spec["exit"], (

@@ -270,6 +270,7 @@ def test_idempotent_no_op_when_already_on_target():
 
 # --- Package-manager drive tests (pip / npm) ---
 
+
 def test_pip_install_drives_package_manager(monkeypatch):
     # A bare `update --manager pip` DRIVES pip install -U, then syncs the Skill.
     # signature_status stays "not_checked" (pip provenance owns integrity).
