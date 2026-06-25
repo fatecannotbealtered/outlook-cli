@@ -7,6 +7,12 @@
 line-length = 100
 target-version = "py310"
 
+# contract_gen.py is GENERATED from the fleet contract.json by
+# scripts/gen-contract.js (drift-guarded by check-spec). Exclude it from ruff so
+# the formatter does not fight the generator: ruff format would rewrite it, which
+# then fails the codegen drift check. The generated file is the canonical form.
+extend-exclude = ["outlook_cli/contract_gen.py"]
+
 [lint]
 # E/F: pycodestyle + pyflakes (core correctness + style)
 # I:   import sorting (isort)
