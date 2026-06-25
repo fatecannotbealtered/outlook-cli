@@ -89,6 +89,36 @@ Conventions:
   Omit the field when there is nothing to report. See §14.
 - A breaking schema change must bump the `schema_version` major version.
 
+### 3.1 Canonical machine contract (`contract.json`) — single source, enforced
+
+The prose in §3/§6/§11 has a machine-readable twin: **`contract/contract.json`**,
+maintained **only** in this template repo and the single source of truth for the
+fields every tool shares. It encodes the envelope key sets, the `E_*` ↔ exit ↔
+`retryable` table, the self-description required keys, naming convention,
+pagination/batch shapes, and the `_untrusted` key.
+
+- **One source, vendored copies, no drift.** A tool does not hand-author these.
+  It vendors `contract.json` (and the `.agent` specs) pinned to a spec tag in
+  `.agent/SPEC_VERSION`, regenerates a per-language module (`contract_gen.{go,py}`)
+  from it via `scripts/gen-contract.js`, and a fail-closed CI guard
+  (`scripts/check-spec.js`) keeps both byte-identical to `template@<pin>` and the
+  generated module in sync with `contract.json`. Editing the contract happens in
+  the template; tools bump the pin and run `scripts/sync-spec.js`.
+- **Core is frozen; features extend, never redefine.** `error_codes.core` is
+  identical in every tool (this is what makes exit-code/retryable behavior
+  portable). A tool's unique error codes live in `contract-ext.json` and are
+  validated: an ext code is `E_*`, must declare `{exit, retryable}`, must not
+  shadow a core code, and exit `9` is reserved for human-action codes
+  (`E_HUMAN_REQUIRED`, `E_2FA_REQUIRED`). This is how the contract stays uniform
+  while supporting tool-specific fields.
+- **Enforcement calibration.** Envelope keys, the error-code table, `meta` keys,
+  and the `schema_version` value are matched **exactly**. Self-description blocks
+  (`reference` / `context` / `doctor` / `changelog` / `update`) must contain the
+  **required** canonical keys but may add tool-specific ones — so a unique feature
+  command is never blocked, only the shared surface is pinned. A runtime
+  conformance test (per tool) asserts actual command output against
+  `contract.json`.
+
 ## 4. stdout / stderr rules
 
 - In `json` mode, stdout may contain only one JSON document, or NDJSON for explicitly streaming commands.
@@ -654,6 +684,23 @@ Single-command update contract (no leaf commands, no confirm token):
   <token>` write gate** — the safety guarantee is the in-process signature
   verification below, not an agent's review of a preview. There are no `update`
   leaf subcommands.
+- **Install-method dispatch — drive the manager, don't just print the command.**
+  "Replace the binary/package" means reaching the upgraded end state in that one
+  call for *every* install method, not only standalone binaries:
+  - **Standalone binary** (the tool owns the file): download → in-process Sigstore
+    signature verify → checksum → atomic in-place swap; `signature_status:
+    "verified"`.
+  - **Package-manager-managed install** (npm / Go / Homebrew — the manager owns the
+    file): the tool MUST NOT mutate the managed file in place (that desyncs the
+    manager's metadata) and MUST NOT merely return the command for the user to run.
+    It DRIVES the manager — it executes the install command on the user's behalf
+    (e.g. `npm install -g <pkg>@<version>`), then syncs the Skill, reaching the same
+    end state with `status: "updated"`. Integrity on this path is the package
+    manager's own (registry integrity/provenance), so `signature_status` is
+    `not_checked`; the new version takes effect on the next invocation. Detection
+    must be robust (don't misclassify a standalone binary as managed); a failed
+    manager invocation reports the error with `binary_replaced: false` and the
+    exact command to run manually.
 - `update --check` is an OPTIONAL read-only probe: report current/target
   versions, install method, whether an update is available, whether Skill sync is
   supported, and signature/checksum availability. It changes nothing.

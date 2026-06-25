@@ -13,7 +13,9 @@ import sys
 import time
 from typing import Any
 
-SCHEMA_VERSION = "1.0"
+from . import contract_gen
+
+SCHEMA_VERSION = contract_gen.SCHEMA_VERSION
 FORMAT_JSON = "json"
 FORMAT_TEXT = "text"
 FORMAT_RAW = "raw"
@@ -116,7 +118,11 @@ def _semantic_code(code: str) -> str:
 
 
 def exit_code_for(code: str, fallback: int = 1) -> int:
-    return EXIT_CODE_BY_ERROR.get(_semantic_code(code), fallback)
+    sem = _semantic_code(code)
+    spec = contract_gen.CODES.get(sem)
+    if spec is not None:
+        return spec["exit"]
+    return EXIT_CODE_BY_ERROR.get(sem, fallback)
 
 
 def init(
@@ -244,7 +250,7 @@ def error_envelope(
 ) -> dict[str, Any]:
     semantic = _semantic_code(code)
     if retryable is None:
-        retryable = semantic in RETRYABLE_ERRORS
+        retryable = contract_gen.retryable(semantic)
     if meta is None:
         meta = {"duration_ms": int((time.monotonic() - _started_at) * 1000)}
     return {

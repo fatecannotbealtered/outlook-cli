@@ -85,7 +85,7 @@ def test_integrity_failure_is_non_retryable(monkeypatch):
         "outlook_cli.update_binary.perform_binary_update",
         side_effect=IntegrityError("signature verification failed"),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     assert result.exit_code == 1
     doc = _doc(result)
     assert doc["error"]["code"] == "E_INTEGRITY"
@@ -102,7 +102,7 @@ def test_replace_io_failure_is_e_io(monkeypatch):
         "outlook_cli.update_binary.perform_binary_update",
         side_effect=ReplaceError("disk full", "E_IO"),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     assert result.exit_code == 1
     doc = _doc(result)
     assert doc["error"]["code"] == "E_IO"
@@ -116,7 +116,7 @@ def test_replace_permission_failure_is_e_forbidden(monkeypatch):
         "outlook_cli.update_binary.perform_binary_update",
         side_effect=ReplaceError("permission denied", "E_FORBIDDEN"),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     assert result.exit_code == 4
     doc = _doc(result)
     assert doc["error"]["code"] == "E_FORBIDDEN"
@@ -137,7 +137,7 @@ def test_skill_sync_failure_is_partial_success(monkeypatch):
         ),
         mock.patch.object(updater.subprocess, "run", return_value=completed),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     # Partial success: not exit 0 (it is not a clean success), but the envelope
     # tells the agent the binary is already new and gives skill_sync_command.
     doc = _doc(result)
@@ -156,7 +156,7 @@ def test_download_failure_is_retryable_network(monkeypatch):
         "outlook_cli.update_binary.perform_binary_update",
         side_effect=OSError("connection reset"),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     assert result.exit_code == 7
     doc = _doc(result)
     assert doc["error"]["code"] == "E_NETWORK"
@@ -221,7 +221,7 @@ def test_interrupt_during_verify_is_interrupted_not_integrity(monkeypatch):
 
     _not_on_target(monkeypatch)
     monkeypatch.setattr(update_binary, "perform_binary_update", _interrupt_in_verify)
-    result = _invoke([])
+    result = _invoke(["--manager", "manual"])
     assert result.exit_code == 130
     doc = _doc(result)
     assert doc["error"]["code"] == "E_INTERRUPTED"
@@ -247,7 +247,7 @@ def test_skill_sync_npx_missing_surfaces_partial_not_server_error(monkeypatch):
         ),
         mock.patch.object(updater.subprocess, "run", side_effect=FileNotFoundError("npx")),
     ):
-        result = _invoke([])
+        result = _invoke(["--manager", "manual"])
     doc = _doc(result)
     assert doc["ok"] is False
     assert doc["error"]["code"] != "E_SERVER"
@@ -266,3 +266,99 @@ def test_idempotent_no_op_when_already_on_target():
     assert data["noop"] is True
     assert data["updated"] is False
     assert data["binary_replaced"] is False
+
+
+# --- Package-manager drive tests (pip / npm) ---
+
+def test_pip_install_drives_package_manager(monkeypatch):
+    # A bare `update --manager pip` DRIVES pip install -U, then syncs the Skill.
+    # signature_status stays "not_checked" (pip provenance owns integrity).
+    _not_on_target(monkeypatch)
+    calls = []
+    ok_proc = mock.Mock(returncode=0, stdout="", stderr="")
+
+    def _fake_pm(*a, **k):
+        calls.append(a[0])
+        return ok_proc
+
+    monkeypatch.setattr(updater, "_run_package_manager_install", _fake_pm)
+    # Stub skill sync too
+    monkeypatch.setattr(updater.subprocess, "run", mock.Mock(return_value=ok_proc))
+
+    result = _invoke(["--manager", "pip", "--target-version", "2.0.0"])
+    assert result.exit_code == 0, result.output
+    assert any("pip" in str(c) for c in calls), f"pip not in calls: {calls}"
+    data = _doc(result)["data"]
+    assert data["binary_replaced"] is True
+    assert data["install_method"] == "pip"
+    assert data["signature_status"] == "not_checked"
+    assert data["skill_sync_status"] == "synced"
+
+
+def test_npm_install_drives_package_manager(monkeypatch):
+    # A bare `update --manager npm` DRIVES npm install -g, then syncs the Skill.
+    _not_on_target(monkeypatch)
+    calls = []
+    ok_proc = mock.Mock(returncode=0, stdout="", stderr="")
+
+    def _fake_pm(*a, **k):
+        calls.append(a[0])
+        return ok_proc
+
+    monkeypatch.setattr(updater, "_run_package_manager_install", _fake_pm)
+    monkeypatch.setattr(updater.subprocess, "run", mock.Mock(return_value=ok_proc))
+
+    result = _invoke(["--manager", "npm", "--target-version", "2.0.0"])
+    assert result.exit_code == 0, result.output
+    assert any("npm" in str(c) for c in calls), f"npm not in calls: {calls}"
+    data = _doc(result)["data"]
+    assert data["binary_replaced"] is True
+    assert data["install_method"] == "npm"
+    assert data["signature_status"] == "not_checked"
+    assert data["skill_sync_status"] == "synced"
+
+
+def test_package_manager_dry_run_does_not_execute(monkeypatch):
+    # --dry-run on a package-manager install is a read-only preview: must NOT
+    # invoke the manager, must report the plan without confirm_token/expires_at.
+    _not_on_target(monkeypatch)
+    called = []
+    monkeypatch.setattr(updater, "_run_package_manager_install", lambda *a, **k: called.append(a))
+    result = _invoke(["--manager", "pip", "--target-version", "2.0.0"], obj={"dry_run": True})
+    assert result.exit_code == 0, result.output
+    assert not called, "dry-run must not invoke the package manager"
+    data = _doc(result)["data"]
+    assert "confirm_token" not in data
+    assert "expires_at" not in data
+    assert data["install_method"] == "github-binary"  # plan_update always shows github-binary
+
+
+def test_package_manager_failure_reports_e_io(monkeypatch):
+    # When pip/npm exits non-zero: E_IO, binary_replaced:false, command surfaced.
+    _not_on_target(monkeypatch)
+    fail_proc = mock.Mock(returncode=1, stdout="", stderr="No matching distribution found")
+    monkeypatch.setattr(updater, "_run_package_manager_install", lambda *a, **k: fail_proc)
+
+    result = _invoke(["--manager", "pip", "--target-version", "2.0.0"])
+    assert result.exit_code == 1, result.output
+    doc = _doc(result)
+    assert doc["error"]["code"] == "E_IO"
+    assert doc["error"]["details"]["binary_replaced"] is False
+    assert "pip" in doc["error"]["details"].get("command", "")
+
+
+def test_package_manager_skill_sync_failure_is_partial_success(monkeypatch):
+    # pip installs OK but Skill sync fails: binary_replaced=true, retryable.
+    _not_on_target(monkeypatch)
+    ok_proc = mock.Mock(returncode=0, stdout="", stderr="")
+    fail_proc = mock.Mock(returncode=1, stdout="", stderr="npx not found")
+    monkeypatch.setattr(updater, "_run_package_manager_install", lambda *a, **k: ok_proc)
+    monkeypatch.setattr(updater.subprocess, "run", mock.Mock(return_value=fail_proc))
+
+    result = _invoke(["--manager", "pip", "--target-version", "2.0.0"])
+    doc = _doc(result)
+    assert doc["ok"] is False
+    details = doc["error"]["details"]
+    assert details["binary_replaced"] is True
+    assert details["skill_sync_status"] == "failed"
+    assert doc["error"]["retryable"] is True

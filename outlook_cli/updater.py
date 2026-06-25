@@ -14,6 +14,10 @@ from typing import Any
 
 from . import __version__
 
+# Testable seam: tests replace this with a no-op so they never shell out to
+# real pip/npm. Production code keeps the default subprocess.run.
+_run_package_manager_install = subprocess.run
+
 NPM_PACKAGE = "@fateforge/outlook-cli"
 PYPI_PACKAGE = "outlook-cli"
 SKILL_REPO = "fatecannotbealtered/outlook-cli"
@@ -241,6 +245,21 @@ def _now_iso(epoch: float | None = None) -> str:
     return moment.isoformat().replace("+00:00", "Z")
 
 
+def _package_manager_install_cmd(manager: str, target_version: str) -> list[str]:
+    """Return the argv for a package-manager install (no shell)."""
+    if manager == "pip":
+        return ["pip", "install", "-U", f"{PYPI_PACKAGE}=={target_version}"]
+    if manager == "npm":
+        return ["npm", "install", "-g", f"{NPM_PACKAGE}@{target_version}"]
+    raise ValueError(f"unsupported package manager: {manager}")
+
+
+def _run_package_manager_update(manager: str, target_version: str) -> subprocess.CompletedProcess:
+    """Drive the package manager to install target_version. Uses the testable seam."""
+    cmd = _package_manager_install_cmd(manager, target_version)
+    return _run_package_manager_install(cmd, capture_output=True, text=True, timeout=300)
+
+
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     """Build a deterministic dry-run plan without touching the network."""
     skill_command = skill_sync_command()
@@ -269,6 +288,100 @@ def plan_update(manager: str, target_version: str) -> dict[str, Any]:
             },
         ],
         "manual_url": "https://github.com/fatecannotbealtered/outlook-cli/releases",
+    }
+
+
+def _execute_package_manager_update(
+    manager: str,
+    target_version: str,
+    previous_version: str,
+    skill_command: list[str],
+    skill_command_str: str,
+    progress: UpdateProgress,
+) -> dict[str, Any]:
+    """Drive pip or npm to install target_version, then sync the Skill.
+
+    The package manager owns download + integrity + replace; signature_status
+    stays "not_checked". The new version is effective on the next invocation.
+    On failure raises StageError(E_IO, binary_replaced=False)."""
+    progress.stage = "replace"
+    cmd = _package_manager_install_cmd(manager, target_version)
+    cmd_str = shlex.join(str(c) for c in cmd)
+    try:
+        proc = _run_package_manager_update(manager, target_version)
+    except (OSError, FileNotFoundError) as exc:
+        raise StageError(
+            f"package-manager update failed: {exc} — run `{cmd_str}` manually",
+            stage="replace",
+            code="E_IO",
+            current_version=previous_version,
+            binary_replaced=False,
+            skill_sync_status="not_run",
+            retryable=False,
+            details={"command": cmd_str, "install_method": manager},
+        ) from exc
+
+    if proc.returncode != 0:
+        out = (proc.stdout or "").strip()[-1000:]
+        err = (proc.stderr or "").strip()[-1000:]
+        detail = out or err or "non-zero exit"
+        raise StageError(
+            f"package-manager update failed: {detail} — run `{cmd_str}` manually",
+            stage="replace",
+            code="E_IO",
+            current_version=previous_version,
+            binary_replaced=False,
+            skill_sync_status="not_run",
+            retryable=False,
+            details={"command": cmd_str, "install_method": manager},
+        )
+
+    # The package manager replaced the on-disk binary; this process is still
+    # the old image, so the new version is effective on the next invocation.
+    progress.stage = "skill_sync"
+    progress.binary_replaced = True
+    progress.current_version = target_version
+    try:
+        skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
+    except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+        raise SkillSyncPartial(
+            f"binary updated to {target_version} via {manager}; Skill sync failed"
+            f" — run `{skill_command_str}`, then changelog --since {previous_version}",
+            previous_version=previous_version,
+            current_version=target_version,
+            skill_sync_command=skill_command_str,
+            details={"command": skill_command, "error": str(exc)},
+        ) from exc
+
+    if skill_result.returncode != 0:
+        raise SkillSyncPartial(
+            f"binary updated to {target_version} via {manager}; Skill sync failed"
+            f" — run `{skill_command_str}`, then changelog --since {previous_version}",
+            previous_version=previous_version,
+            current_version=target_version,
+            skill_sync_command=skill_command_str,
+            details={
+                "command": skill_command,
+                "returncode": skill_result.returncode,
+                "stdout": skill_result.stdout[-4000:],
+                "stderr": skill_result.stderr[-4000:],
+            },
+        )
+
+    return {
+        "previous_version": previous_version,
+        "current_version": target_version,
+        "target_version": target_version,
+        "install_method": manager,
+        "status": "updated",
+        "stage": "skill_sync",
+        "binary_replaced": True,
+        "signature_status": "not_checked",
+        "signature_verified": False,
+        "skill_sync_command": skill_command_str,
+        "skill_sync_status": "synced",
+        "updated": True,
+        "next_step": f'run "outlook-cli changelog --since {previous_version}" to see what changed',
     }
 
 
@@ -318,6 +431,12 @@ def execute_update(
 
     def _on_stage(name: str) -> None:
         progress.stage = name
+
+    # --- Package-manager path (pip/npm): the manager owns download/integrity/replace. ---
+    if manager in ("pip", "npm"):
+        return _execute_package_manager_update(
+            manager, target_version, previous_version, skill_command, skill_command_str, progress
+        )
 
     # --- Stages BEFORE the swap: any failure leaves the old binary intact. ---
     try:

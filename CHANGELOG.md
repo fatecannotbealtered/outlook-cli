@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Contract single-source: `outlook_cli/contract_gen.py` is now generated from `contract/contract.json` (vendored from `ai-native-cli-spec@v1.4`) via `node scripts/gen-contract.js --lang py`. `output.SCHEMA_VERSION`, `exit_code_for()`, and the `retryable` check in `error_envelope()` delegate to `contract_gen` so they cannot drift from the fleet contract.
+- Conformance test `tests/test_contract_conformance.py`: asserts every `E_*` in `EXIT_CODE_BY_ERROR` is in `contract_gen.CODES` with exact exit + retryability, that `RETRYABLE_ERRORS` matches, that `SCHEMA_VERSION` matches, and that success/error/meta envelope keys are within the canonical set.
+- CI guard `node scripts/check-spec.js --local-only` in the `version-check` job: fails if `contract_gen.py` drifts from `contract/contract.json`.
+- `update --manager pip|npm` now **drives** the package manager (`pip install -U outlook-cli==<ver>` or `npm install -g @fateforge/outlook-cli@<ver>`) instead of only printing the command. The manager-path result carries `signature_status: "not_checked"` (package manager provenance owns integrity), `binary_replaced: true`, and `skill_sync_status: "synced"`. `--check`/`--dry-run` remain read-only. A testable seam (`_run_package_manager_install`) allows unit tests to stub the subprocess without shelling out.
+
+### Changed
+
+- `.agent/` spec files synced from `ai-native-cli-spec@v1.4` (single-source; do not hand-edit).
+
 ## [1.1.9] - 2026-06-25
 
 ### Changed
