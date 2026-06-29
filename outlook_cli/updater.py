@@ -177,12 +177,22 @@ def read_cached_update_notices() -> list[dict[str, Any]]:
     checked_at = float(cache.get("checked_at_epoch") or 0)
     if checked_at <= 0 or (time_now() - checked_at) > UPDATE_NOTICE_TTL_SECONDS:
         return []
+    from .changelog import _version_key
+
+    current_key = _version_key(__version__)
     notices = []
     for notice in cache.get("notices") or []:
-        if notice.get("type") == "update_available" and notice.get("update_available"):
-            cloned = dict(notice)
-            cloned["source"] = "cache"
-            notices.append(cloned)
+        if notice.get("type") != "update_available" or not notice.get("update_available"):
+            continue
+        # Version-aware: suppress a stale "update available" notice once the
+        # running binary is already at (or past) the cached latest version — e.g.
+        # right after a successful update, before the 24h cache TTL lapses.
+        latest = str(notice.get("latest_version") or "")
+        if latest and _version_key(latest) <= current_key:
+            continue
+        cloned = dict(notice)
+        cloned["source"] = "cache"
+        notices.append(cloned)
     return notices
 
 

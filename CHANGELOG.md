@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.11] - 2026-06-29
+
+### Fixed
+
+- `update` notice cache reads are now version-aware: a cached `update_available` notice is suppressed once the running binary is already at or past the cached latest version. Business commands no longer keep advertising an update to a version that is already installed for up to the 24h cache TTL (for example, right after a successful update).
+
 ## [1.1.10] - 2026-06-25
 
 ### Added

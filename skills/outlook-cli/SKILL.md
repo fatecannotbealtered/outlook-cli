@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.10"
+version: "1.1.11"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.10"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.11"}}
 ---
 
 # outlook-cli
