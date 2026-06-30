@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Security
+
+- **Bumped `sigstore` to `>=4.3.0,<5`** (#7), pulling in the sigstore fixes for CVE-2024-55655 and CVE-2026-24408. sigstore backs `update`'s signature verification.
+
+### Changed
+
+- **Bumped `click` to `>=8.4.2,<9.0`** (#8) — CLI-framework runtime dependency.
+
 ## [1.1.11] - 2026-06-29
 
 ### Fixed
