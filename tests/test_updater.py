@@ -74,16 +74,20 @@ def test_execute_update_runs_binary_pipeline_and_syncs_skill():
             },
         ),
         mock.patch.object(updater.subprocess, "run", return_value=completed),
+        mock.patch.object(updater, "write_update_notice_cache") as write_cache,
     ):
         result = updater.execute_update("auto", "latest", quiet=True)
 
     assert result["previous_version"] == updater.__version__
     assert result["current_version"] == "2.0.1"
+    assert result["target_version"] == "2.0.1"
+    assert result["update_available"] is False
     assert result["install_method"] == "github-binary"
     assert result["signature_status"] == "verified"
     assert result["skill_sync_status"] == "synced"
     assert result["binary_replaced"] is True
     assert result["stage"] == "skill_sync"
+    write_cache.assert_called_once_with([])
 
 
 def test_execute_update_integrity_failure_is_non_retryable_stage_error():
@@ -168,6 +172,8 @@ def test_execute_update_skill_sync_failure_is_partial_success():
     assert err.current_version == "2.0.1"
     data = err.data()
     assert data["binary_replaced"] is True
+    assert data["target_version"] == "2.0.1"
+    assert data["update_available"] is False
     assert data["skill_sync_status"] == "failed"
     assert data["skill_sync_command"]
 
@@ -194,6 +200,8 @@ def test_execute_update_skill_sync_npx_missing_is_partial_success():
     assert err.current_version == "2.0.1"
     data = err.data()
     assert data["binary_replaced"] is True
+    assert data["target_version"] == "2.0.1"
+    assert data["update_available"] is False
     assert data["skill_sync_status"] == "failed"
     assert data["skill_sync_command"]
 
@@ -221,7 +229,10 @@ def test_execute_update_skill_sync_timeout_is_partial_success():
         with pytest.raises(updater.SkillSyncPartial) as excinfo:
             updater.execute_update("auto", "latest", quiet=True)
     assert excinfo.value.current_version == "2.0.1"
-    assert excinfo.value.data()["binary_replaced"] is True
+    data = excinfo.value.data()
+    assert data["binary_replaced"] is True
+    assert data["target_version"] == "2.0.1"
+    assert data["update_available"] is False
 
 
 def test_execute_update_progress_records_binary_replaced_before_skill_sync():

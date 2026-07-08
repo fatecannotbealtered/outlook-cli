@@ -62,3 +62,11 @@ def test_schema_labels_have_valid_shape():
     for label, schema in schemas.items():
         assert schema.get("shape") in {"object", "array"}, f"{label} has invalid shape"
         assert schema.get("fields"), f"{label} has empty fields"
+
+
+def test_update_result_schema_describes_final_state_fields():
+    code, stdout, _ = run_cli("reference", "--json")
+    assert code == 0
+    schemas = json.loads(stdout[stdout.find("{") :])["data"]["schemas"]
+    fields = set(schemas["update_result"]["fields"])
+    assert {"current_version", "target_version", "update_available"} <= fields

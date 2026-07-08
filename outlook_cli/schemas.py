@@ -449,6 +449,7 @@ OUTPUT_SCHEMAS: dict[str, dict] = {
             "current_version",
             "previous_version",
             "target_version",
+            "update_available",
             "install_method",
             "supported",
             "command",

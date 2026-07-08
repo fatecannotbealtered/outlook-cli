@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.13] - 2026-07-08
+
+### Fixed
+
+- Successful binary and package-manager `update` results now report final post-install state (`current_version == target_version`, `update_available: false`) and clear the cached update notice after the binary or package manager commits.
+- Post-swap Skill-sync partial-success payloads now also report `target_version == current_version` and `update_available: false`, so agents can tell the binary is already at the target version even though the Skill still needs syncing.
+- The no-op `update` result now carries `target_version` and `update_available: false`, so an already-current install cannot look like an available update.
+- `reference` now lists `update_available` in the `update_result` schema, matching the runtime update payload.
+
 ## [1.1.12] - 2026-07-02
 
 ### Security

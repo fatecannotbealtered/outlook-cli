@@ -53,6 +53,8 @@ def test_bare_update_executes_without_confirm_token(monkeypatch):
         lambda *a, **k: {
             "previous_version": "1.0.0",
             "current_version": "2.0.0",
+            "target_version": "2.0.0",
+            "update_available": False,
             "install_method": "github-binary",
             "stage": "skill_sync",
             "binary_replaced": True,
@@ -67,6 +69,8 @@ def test_bare_update_executes_without_confirm_token(monkeypatch):
     data = _doc(result)["data"]
     assert data["binary_replaced"] is True
     assert data["current_version"] == "2.0.0"
+    assert data["target_version"] == "2.0.0"
+    assert data["update_available"] is False
 
 
 def test_dry_run_issues_no_confirm_token(monkeypatch):
@@ -266,6 +270,32 @@ def test_idempotent_no_op_when_already_on_target():
     assert data["noop"] is True
     assert data["updated"] is False
     assert data["binary_replaced"] is False
+    assert data["target_version"] == updater.__version__
+    assert data["update_available"] is False
+
+
+def test_idempotent_no_op_clears_stale_meta_notices(monkeypatch):
+    cached = [
+        {
+            "type": "update_available",
+            "severity": "warning",
+            "current_version": "1.0.0",
+            "latest_version": "9.9.9",
+            "update_available": True,
+        }
+    ]
+
+    def _write(notices):
+        cached[:] = notices
+
+    monkeypatch.setattr(updater, "write_update_notice_cache", _write)
+    monkeypatch.setattr(updater, "read_cached_update_notices", lambda: list(cached))
+
+    result = _invoke(["--target-version", updater.__version__])
+    assert result.exit_code == 0, result.output
+    doc = _doc(result)
+    assert doc["data"]["noop"] is True
+    assert "notices" not in doc["meta"]
 
 
 # --- Package-manager drive tests (pip / npm) ---
@@ -283,6 +313,10 @@ def test_pip_install_drives_package_manager(monkeypatch):
         return ok_proc
 
     monkeypatch.setattr(updater, "_run_package_manager_install", _fake_pm)
+    cache_writes = []
+    monkeypatch.setattr(
+        updater, "write_update_notice_cache", lambda notices: cache_writes.append(notices)
+    )
     # Stub skill sync too
     monkeypatch.setattr(updater.subprocess, "run", mock.Mock(return_value=ok_proc))
 
@@ -291,9 +325,12 @@ def test_pip_install_drives_package_manager(monkeypatch):
     assert any("pip" in str(c) for c in calls), f"pip not in calls: {calls}"
     data = _doc(result)["data"]
     assert data["binary_replaced"] is True
+    assert data["target_version"] == "2.0.0"
+    assert data["update_available"] is False
     assert data["install_method"] == "pip"
     assert data["signature_status"] == "not_checked"
     assert data["skill_sync_status"] == "synced"
+    assert cache_writes == [[]]
 
 
 def test_npm_install_drives_package_manager(monkeypatch):
@@ -314,9 +351,44 @@ def test_npm_install_drives_package_manager(monkeypatch):
     assert any("npm" in str(c) for c in calls), f"npm not in calls: {calls}"
     data = _doc(result)["data"]
     assert data["binary_replaced"] is True
+    assert data["target_version"] == "2.0.0"
+    assert data["update_available"] is False
     assert data["install_method"] == "npm"
     assert data["signature_status"] == "not_checked"
     assert data["skill_sync_status"] == "synced"
+
+
+def test_package_manager_default_latest_resolves_concrete_version(monkeypatch):
+    _not_on_target(monkeypatch)
+    monkeypatch.setattr(updater, "latest_version", lambda *_a, **_k: ("2.0.0", None))
+    ok_proc = mock.Mock(returncode=0, stdout="", stderr="")
+
+    for manager, expected in [
+        ("pip", "outlook-cli==2.0.0"),
+        ("npm", "@fateforge/outlook-cli@2.0.0"),
+    ]:
+        calls = []
+
+        def _fake_pm(cmd, _calls=calls, **_kwargs):
+            _calls.append(cmd)
+            return ok_proc
+
+        monkeypatch.setattr(updater, "_run_package_manager_install", _fake_pm)
+        monkeypatch.setattr(updater.subprocess, "run", mock.Mock(return_value=ok_proc))
+
+        result = _invoke(["--manager", manager])
+        assert result.exit_code == 0, result.output
+        assert any(expected in str(part) for call in calls for part in call), calls
+        assert not any(
+            str(part).endswith("==latest") or str(part).endswith("@latest")
+            for call in calls
+            for part in call
+        )
+        data = _doc(result)["data"]
+        assert data["current_version"] == "2.0.0"
+        assert data["target_version"] == "2.0.0"
+        assert data["update_available"] is False
+        assert data["install_method"] == manager
 
 
 def test_package_manager_dry_run_does_not_execute(monkeypatch):

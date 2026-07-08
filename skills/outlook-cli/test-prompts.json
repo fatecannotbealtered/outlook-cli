@@ -22,6 +22,11 @@
   {
     "id": "self-update",
     "prompt": "Update outlook-cli and continue using it.",
-    "expected": "Run the single-command update (no confirm token), review signature_status/checksum verification, verify skill_sync_status or run the returned skill_sync_command, then read changelog --since <previous_version> and refresh reference."
+    "expected": "Run the single-command update (no confirm token), review signature_status/checksum verification, verify skill_sync_status or run the returned skill_sync_command, confirm the success payload is final-state (current_version == target_version and update_available == false), then read changelog --since <previous_version> and refresh reference."
+  },
+  {
+    "id": "self-update-idempotent",
+    "prompt": "outlook-cli is already at the latest version; check/update it and continue.",
+    "expected": "The tool reports an up-to-date/no-op result with update_available false, does not run any package-manager install command, and does not attach a stale update_available notice from cache."
   }
 ]

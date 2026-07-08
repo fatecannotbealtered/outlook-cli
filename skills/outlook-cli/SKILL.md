@@ -1,10 +1,10 @@
 ---
 name: outlook-cli
-version: "1.1.12"
+version: "1.1.13"
 description: "Outlook Exchange CLI for email, calendar, folders, rules, contacts, rooms, OOF, meeting responses, diagnostics, and self-update; use when tasks mention Outlook, Exchange, mail, inbox, calendar, meetings, availability, rooms, folders, rules, or auto-reply."
 license: MIT
 user-invocable: true
-metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.12"}}
+metadata: {"requires": {"bins": ["outlook-cli"], "min_version": "1.1.13"}}
 ---
 
 # outlook-cli
@@ -143,6 +143,8 @@ resolves the latest (or `--target-version`) release, verifies its signature and
 checksum, replaces the binary, and syncs this Skill — all in one call. It is
 idempotent (already-latest returns a no-op). `--check` and `--dry-run` are
 OPTIONAL read-only previews that change nothing and issue no token.
+
+Successful update results are final-state: `current_version` must equal `target_version`, `update_available` must be `false`, and stale `update_available` notices must be cleared or suppressed before later commands attach `meta.notices`. A post-swap Skill-sync partial success must also expose `target_version` and `update_available:false`. An already-current install must return a no-op result without running a package-manager install command.
 
 ```bash
 outlook-cli update --check --compact     # optional: read-only probe

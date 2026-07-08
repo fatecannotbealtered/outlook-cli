@@ -270,6 +270,27 @@ def _run_package_manager_update(manager: str, target_version: str) -> subprocess
     return _run_package_manager_install(cmd, capture_output=True, text=True, timeout=300)
 
 
+def _resolve_update_target_version(manager: str, target_version: str) -> str:
+    from .update_binary import normalize_version
+
+    requested = normalize_version(target_version)
+    if requested and requested != "latest":
+        return requested
+    latest, err = latest_version(manager)
+    if latest:
+        return latest
+    raise StageError(
+        "Checking latest version failed",
+        stage="discover",
+        code="E_NETWORK",
+        current_version=__version__,
+        binary_replaced=False,
+        skill_sync_status="not_run",
+        retryable=True,
+        details={"error": err or "latest version unavailable"},
+    )
+
+
 def plan_update(manager: str, target_version: str) -> dict[str, Any]:
     """Build a deterministic dry-run plan without touching the network."""
     skill_command = skill_sync_command()
@@ -363,6 +384,7 @@ def _execute_package_manager_update(
     progress.stage = "skill_sync"
     progress.binary_replaced = True
     progress.current_version = target_version
+    write_update_notice_cache([])
     try:
         skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
@@ -396,6 +418,7 @@ def _execute_package_manager_update(
         "previous_version": previous_version,
         "current_version": target_version,
         "target_version": target_version,
+        "update_available": False,
         "install_method": manager,
         "status": "updated",
         "stage": "skill_sync",
@@ -458,6 +481,7 @@ def execute_update(
 
     # --- Package-manager path (pip/npm): the manager owns download/integrity/replace. ---
     if manager in ("pip", "npm"):
+        target_version = _resolve_update_target_version(manager, target_version)
         return _execute_package_manager_update(
             manager, target_version, previous_version, skill_command, skill_command_str, progress
         )
@@ -508,6 +532,7 @@ def execute_update(
     progress.stage = "skill_sync"
     progress.binary_replaced = True
     progress.current_version = new_version
+    write_update_notice_cache([])
     try:
         skill_result = subprocess.run(skill_command, capture_output=True, text=True, timeout=300)
     except FileNotFoundError as exc:
@@ -564,7 +589,8 @@ def execute_update(
     return {
         "previous_version": previous_version,
         "current_version": new_version,
-        "target_version": target_version,
+        "target_version": new_version,
+        "update_available": False,
         "install_method": "github-binary",
         "status": result["status"],
         "stage": "skill_sync",
@@ -658,7 +684,8 @@ class SkillSyncPartial(Exception):
         return {
             "previous_version": self.previous_version,
             "current_version": self.current_version,
-            "target_version": "",
+            "target_version": self.current_version,
+            "update_available": False,
             "install_method": self.install_method,
             "stage": "skill_sync",
             "binary_replaced": True,

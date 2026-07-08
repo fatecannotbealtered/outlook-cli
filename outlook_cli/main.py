@@ -699,6 +699,7 @@ def update_cmd(ctx, check_only, manager, target_version):
 
     # Idempotent: already at the requested/latest version is a no-op success.
     if _already_on_target(resolved_manager, target_version):
+        write_update_notice_cache([])
         output.print_json(_update_noop_payload())
         return
 
@@ -727,6 +728,8 @@ def _update_noop_payload() -> dict:
     return {
         "previous_version": __version__,
         "current_version": __version__,
+        "target_version": __version__,
+        "update_available": False,
         "install_method": "github-binary",
         "stage": "skill_sync",
         "binary_replaced": False,
