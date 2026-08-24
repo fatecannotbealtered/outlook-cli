@@ -56,6 +56,18 @@ jobs:
         with:
           node-version: "20"
 
+      # gen-contract.js pipes the generated Python through `ruff format`, and
+      # falls back to unformatted output when ruff is missing. Without ruff on
+      # PATH this job would regenerate a differently-formatted contract_gen.py
+      # and report drift against the correctly-formatted committed one. The
+      # codegen verifier needs the same toolchain the codegen uses.
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install ruff (required by the contract codegen)
+        run: python -m pip install --upgrade pip && pip install ruff
+
       # Fail-closed: every derived version location must equal package.json.
       - name: Verify version sync
         run: node scripts/check-version.js

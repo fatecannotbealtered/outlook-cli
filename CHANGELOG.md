@@ -20,6 +20,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no longer fight, and a file that ships to users is back under lint. Formatting
   only; no behaviour change.
 
+### Fixed
+
+- The `Verify version sync` job now installs Python and ruff before running
+  `check-spec.js`. That job set up Node only, and `gen-contract.js` silently
+  falls back to unformatted output when ruff is missing — so it regenerated a
+  differently-formatted `contract_gen.py` and reported drift against the
+  correctly-formatted committed file. A fail-closed drift guard whose verdict
+  depended on what happened to be installed is now given the codegen's own
+  toolchain.
+
 ## [1.1.13] - 2026-07-08
 
 ### Fixed
