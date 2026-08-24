@@ -34,6 +34,25 @@ function gofmtBytes(content) {
   }
 }
 
+// ruffFormatBytes formats Python source with `ruff format` so the generated file
+// is byte-identical to what `ruff format --check` (run in CI) expects — keeping
+// --check a pure compare and removing the need to exclude the generated file from
+// ruff. Falls back to the raw bytes if ruff is unavailable (non-Python
+// environments never call this). Mirrors gofmtBytes for Go.
+function ruffFormatBytes(content) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "genc-"));
+  const tmp = path.join(dir, "contract_gen.py");
+  try {
+    fs.writeFileSync(tmp, content);
+    execFileSync("ruff", ["format", "--quiet", tmp], { stdio: ["ignore", "ignore", "inherit"] });
+    return fs.readFileSync(tmp, "utf8");
+  } catch (_) {
+    return content;
+  } finally {
+    try { fs.rmSync(dir, { recursive: true, force: true }); } catch (_) {}
+  }
+}
+
 function parseArgs(argv) {
   const a = { lang: "", out: "", contract: "", ext: "", check: false };
   for (let i = 0; i < argv.length; i++) {
@@ -181,7 +200,9 @@ function main() {
     process.exit(2);
   }
   const contractPath = a.contract || path.join("contract", "contract.json");
-  const extPath = a.ext || path.join("contract", "contract-ext.json");
+  // Resolve the default ext path relative to the contract file's directory, NOT
+  // the process CWD, so `--check` gives the same result from any directory.
+  const extPath = a.ext || path.join(path.dirname(contractPath), "contract-ext.json");
   const model = loadContract(contractPath, extPath);
 
   let outPath, content;
@@ -190,7 +211,7 @@ function main() {
     content = gofmtBytes(genGo(model, "contract"));
   } else if (a.lang === "py") {
     outPath = path.join(a.out, "contract_gen.py");
-    content = genPy(model);
+    content = ruffFormatBytes(genPy(model));
   } else {
     console.error(`unknown --lang ${a.lang}`);
     process.exit(2);

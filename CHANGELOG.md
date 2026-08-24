@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Sync the vendored spec to `ai-native-cli-spec@v1.6.0` (from v1.4). SEC-SPEC §5
+  now requires a dependency audit for every ecosystem a tool ships in and names
+  the per-language tool; the Lint job's `pip-audit` and `npm audit` already
+  satisfy it here. CLI-SPEC §14 states the `update` final-state contract
+  explicitly, which this tool has implemented since 1.1.13.
+- `contract_gen.py` is now emitted through `ruff format`, so the generated module
+  is byte-identical to what `ruff format --check` expects. Its `extend-exclude`
+  entry in `ruff.toml` is removed as a result — the formatter and the generator
+  no longer fight, and a file that ships to users is back under lint. Formatting
+  only; no behaviour change.
+
 ## [1.1.13] - 2026-07-08
 
 ### Fixed

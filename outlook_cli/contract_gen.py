@@ -36,9 +36,8 @@ def retryable(code):
     return bool(spec["retryable"]) if spec else False
 
 
-SUCCESS_ENVELOPE_KEYS = ["ok","schema_version","data","meta"]
-ERROR_ENVELOPE_KEYS = ["ok","schema_version","error","meta"]
-ERROR_OBJECT_KEYS = ["code","message","details","retryable"]
+SUCCESS_ENVELOPE_KEYS = ["ok", "schema_version", "data", "meta"]
+ERROR_ENVELOPE_KEYS = ["ok", "schema_version", "error", "meta"]
+ERROR_OBJECT_KEYS = ["code", "message", "details", "retryable"]
 META_REQUIRED_KEYS = ["duration_ms"]
 META_OPTIONAL_KEYS = ["notices"]
-

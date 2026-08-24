@@ -598,9 +598,9 @@ Skill 是写它那天的能力快照，二进制版本一漂就可能错位：�
   - **包管理器管理的安装**（npm / Go / Homebrew——文件归包管理器所有）：工具**不得**原地修改被管理的文件（会让包管理器的元数据失配），也**不得**仅把命令返回给用户去跑。它要**驱动**包管理器——替用户执行安装命令（如 `npm install -g <pkg>@<version>`），再同步 Skill，抵达同样的终态、`status: "updated"`。这条路径的完整性归包管理器自己（registry 完整性/provenance），所以 `signature_status` 为 `not_checked`；新版本在下次调用时生效。安装方式检测必须稳健（别把独立二进制误判为被管理的）；包管理器调用失败时返回错误、`binary_replaced: false` 并附上可手动执行的确切命令。
 - `update --check` 是**可选只读**探针：返回当前/目标版本、安装方式、是否有更新、Skill 同步是否可用、checksum/签名材料是否可用。它不改任何东西。
 - `update --dry-run` 是同样变更（二进制/包更新、Skill 同步、验证计划）的**可选只读**预览。它**不签发 token**，且绝不是 `update` 的前置必经步骤。
-- `update` 幂等：已是最新（或所请求）版本时返回 `ok` + no-op 结果，Agent 可放心反复调用。
-- 成功时 `data` 携带 `previous_version`、`current_version`、`signature_verified`、`signature_status`、`skill_sync_status`，以及足够审计的校验元数据。
-- 如果二进制/包更新成功但 Skill 同步失败，返回部分成功（`ok: false`、`binary_replaced: true`）并给出 `skill_sync_command`；Agent 在 Skill 同步完成前不得使用新文档能力。
+- `update` 幂等：已是最新（或所请求）版本时返回 `ok` + no-op 结果，Agent 可放心反复调用。这个 no-op 判断**必须**先于任何包管理器命令执行；已经是当前版本时不得重跑 `npm`、`go`、`pip`、`brew` 或同类管理器。
+- 成功与 no-op 的 `update` 结果描述的是命令执行后的**终态**，不是安装前的比较。成功安装后，`data` 携带 `previous_version`、`current_version`、`target_version`、`update_available`、`signature_verified`、`signature_status`、`skill_sync_status`，以及足够审计的校验元数据。`current_version` **必须等于** `target_version`，`update_available` **必须为** `false`。no-op 结果中 `current_version` 与 `target_version` 也相等，`update_available` 为 `false`。
+- 如果二进制/包更新成功但 Skill 同步失败，返回部分成功（`ok: false`、`binary_replaced: true`），并给出 `target_version`、`update_available: false` 与 `skill_sync_command`；Agent 在 Skill 同步完成前不得使用新文档能力。
 
 版本通知契约：
 
@@ -610,6 +610,7 @@ Skill 是写它那天的能力快照，二进制版本一漂就可能错位：�
 - 缓存里的通知 MAY 同时挂到**每条命令的 `meta.notices`**，**只从本地缓存读**
   （不联网；代价仅一次本地文件读取）。业务命令只是把缓存通知透出来——绝不主动检查 / 回家。
   缓存无内容可报时省略 `meta.notices`。
+- 成功安装、二进制/包已提交后的部分成功，或目标/最新版本上的幂等 no-op 之后，工具**必须**清除或压制该已安装目标对应的缓存 `update_available` 通知，避免后续命令继续挂出 `meta.notices`。`update` 命令自己的响应也不得携带“刚安装的目标仍可更新”的陈旧通知。
 - 有可用更新时，通知含 `type: "update_available"`、`severity`、当前/最新版本、安装方式、
   `recommended_command`、已知 release URL、检查时间和机器可读的下一步。它出现在主动检查类命令的
   `data`（`context` / `doctor` / `update --check`），并以只读方式从缓存出现在任意命令的

@@ -98,7 +98,7 @@
     },
     "update": {
       "command_field": "command",
-      "note": "The package-manager command an agent/user can run is field 'command' (NOT manager_command/recommended_command/commands). update result also carries status, current_version, target_version, update_available, install_method, signature_status, skill_sync_status; and on success previous_version + (binary path) signature_verified/checksum_verified. See CLI-SPEC §14.",
+      "note": "The package-manager command an agent/user can run is field 'command' (NOT manager_command/recommended_command/commands). update result also carries status, current_version, target_version, update_available, install_method, signature_status, skill_sync_status; and on success previous_version + (binary path) signature_verified/checksum_verified. Successful installs report final state: current_version == target_version and update_available == false. Idempotent no-op is checked before any package-manager command. See CLI-SPEC §14.",
       "required_keys_on_available": ["status", "current_version", "target_version", "update_available", "install_method", "command"]
     }
   },

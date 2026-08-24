@@ -708,13 +708,21 @@ Single-command update contract (no leaf commands, no confirm token):
   (binary/package update, Skill sync, verification plan). It issues NO token and
   is never a required step before `update`.
 - `update` is idempotent: when already on the latest (or requested) version it
-  returns `ok` with a no-op result, so an agent may call it freely.
-- On success, `data` carries `previous_version`, `current_version`,
+  returns `ok` with a no-op result, so an agent may call it freely. This no-op
+  check MUST run before any package-manager command; an already-current install
+  must not re-run `npm`, `go`, `pip`, `brew`, or an equivalent manager.
+- Successful and no-op `update` results describe the final post-command state,
+  not the pre-install comparison. After a successful install, `data` carries
+  `previous_version`, `current_version`, `target_version`, `update_available`,
   `signature_verified`, `signature_status`, `skill_sync_status`, and enough
-  verification metadata for the agent to audit what happened.
+  verification metadata for the agent to audit what happened. `current_version`
+  MUST equal `target_version`, and `update_available` MUST be `false`. In a
+  no-op result, `current_version` and `target_version` are also equal and
+  `update_available` is `false`.
 - If the binary/package updates but Skill sync fails, return partial success
-  (`ok: false`, `binary_replaced: true`) with `skill_sync_command`; the agent
-  must not use newly documented behavior until the Skill sync has completed.
+  (`ok: false`, `binary_replaced: true`) with `target_version`,
+  `update_available: false`, and `skill_sync_command`; the agent must not use
+  newly documented behavior until the Skill sync has completed.
 
 Version notification contract:
 
@@ -728,6 +736,11 @@ Version notification contract:
   read **only from the local cache** (no network; cost is one local file read).
   Business commands surface the cached notice — they never actively check / phone
   home. Omit `meta.notices` when the cache has nothing to report.
+- After a successful install, partial success after the binary/package commit,
+  or an idempotent no-op at the target/latest version, the tool MUST clear or
+  suppress any cached `update_available` notice for that installed target before
+  later commands can attach `meta.notices`. An update command's own response must
+  not carry a stale notice that says the just-installed target is still available.
 - When an update is available, the notice carries `type: "update_available"`,
   `severity`, current/latest versions, install method, `recommended_command`,
   release URL when known, checked-at timestamp, and machine-readable next steps.

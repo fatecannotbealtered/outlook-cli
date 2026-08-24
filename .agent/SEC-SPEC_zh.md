@@ -90,7 +90,11 @@ Agent 侧约定（同时写进 SKILL-SPEC 的用法）：
 
 - **完整性校验，强制且无跳过**：二进制自更新必须**在进程内**验证 `checksums.txt` 的 Sigstore 签名（验证器内置工具二进制，Go 用 `sigstore-go`、Python 冻结二进制内用 `sigstore`，**不外挂 cosign**、不依赖用户环境），再用它校验归档 SHA256。签名缺失/验不过/checksum 不符一律**失败关闭**，没有"验不了就放行"的降级；对外返回 `E_INTEGRITY`（非重试）。checksum 只能证明字节与 checksum 文件一致，签名才能证明 checksum 文件来自发布者。
 - **签名发布材料**：release pipeline 由 tagged GitHub Actions release workflow 用 Sigstore/Cosign keyless 模式以 `--new-bundle-format` 签署 `checksums.txt`（产出 Sigstore protobuf bundle），与进程内验证器对齐。验证时绑定到预期仓库 workflow 身份（锚定 `^…$`）和 GitHub OIDC issuer；TUF 信任根从库内嵌 root 引导，不 TOFU。
-- **依赖锁定 + 审计**：提交 lockfile；CI 跑 `npm audit` / `pip-audit` 一类，高危依赖阻断。
+- **依赖锁定 + 审计**：提交 lockfile；对工具**分发所涉的每一个生态**都要在 CI 里跑依赖审计，
+  失败关闭，高危阻断。Go 工具经 npm wrapper 分发就涉及两个生态，因此 `govulncheck ./...`
+  和 `npm audit` 两者都要跑——只审 wrapper 会让二进制自身的依赖完全没人看，这正是本条要防的
+  失效模式。Python 用 `pip-audit`。`govulncheck` 同时覆盖 Go 标准库，所以工具链级 CVE 会让
+  CI 变红，修法是改 `go.mod` 的 `go` 行（仓库规范 §4 规定工具链单点定义在那里，CI 从那里读）。
 - **构建可追溯**：发布产物由 CI 从打了 tag 的源码构建，不手工上传不明二进制。
 - **不在 postinstall 跑远程脚本**：安装期不执行从网络现拉的代码。
 

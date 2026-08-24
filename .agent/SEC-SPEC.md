@@ -111,7 +111,14 @@ Fallback and channel rules:
   consumes). Verification binds the signature to the expected repository workflow
   identity (anchored `^…$`) and GitHub OIDC issuer; the TUF trust root is
   bootstrapped from the library's embedded root, not TOFU.
-- **Dependency locking + audit**: commit a lockfile; CI runs `npm audit` / `pip-audit` and blocks high-severity dependencies.
+- **Dependency locking + audit**: commit a lockfile; CI runs a dependency audit for
+  **every ecosystem the tool ships in**, fail-closed, and blocks high-severity findings.
+  A Go tool distributed through an npm wrapper ships in two, so it needs both
+  `govulncheck ./...` and `npm audit` — auditing only the wrapper leaves the binary's
+  own dependencies unexamined, which is the failure mode this rule exists to prevent.
+  Python: `pip-audit`. `govulncheck` also covers the Go standard library, so a
+  toolchain-level CVE turns CI red and is fixed by moving the `go` directive in
+  `go.mod` (§4 of the repo spec pins the toolchain there, and CI reads it).
 - **Traceable builds**: release artifacts are built by CI from tagged source, no hand-uploaded unknown binaries.
 - **No remote scripts in postinstall**: don't execute code freshly pulled from the network at install time.
 
