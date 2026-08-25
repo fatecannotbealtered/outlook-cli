@@ -39,6 +39,27 @@ jobs:
       - name: Test
         run: pytest tests/ -q
 
+      # SEC-SPEC §5: the release path gates on the same dependency audit the
+      # merge path does. Without this, a CVE published after the last green run
+      # on main ships: this job re-runs the tests at tag time but never asked
+      # whether the code it is about to sign has a known vulnerability. A
+      # release blocked by a fresh upstream advisory is the intended outcome.
+      - name: Audit Python dependencies
+        if: runner.os == 'Linux'
+        run: pip-audit -r requirements.txt
+
+      # REPO-SPEC §5c: refuse to publish a binary whose vendored spec or
+      # generated contract module has drifted from the pinned tag. ruff comes
+      # from the dev extra installed above, which gen-contract.js needs.
+      - uses: actions/setup-node@v6
+        if: runner.os == 'Linux'
+        with:
+          node-version: "20"
+
+      - name: Verify spec/contract sync
+        if: runner.os == 'Linux'
+        run: node scripts/check-spec.js --local-only
+
       - name: Build binary
         run: python build.py
 

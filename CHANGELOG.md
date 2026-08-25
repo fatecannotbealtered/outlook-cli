@@ -34,6 +34,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   against the correctly-formatted committed file. The job now gets the codegen's
   own toolchain, and the v1.6.1 sync above removes the silent fallback itself,
   so the same gap elsewhere now fails loudly instead of reporting phantom drift.
+- **The release path now gates on the same checks as the merge path.**
+  `release.yml` re-ran the tests at tag time but never ran `pip-audit` or
+  `check-spec.js`, so a CVE published after the last green run on main shipped
+  signed and published. It now runs both, Linux-only, before the binary build.
+- `test_idempotent_no_op_when_already_on_target` now stubs the package-manager
+  seam to fail the test if it is reached, instead of only checking the result
+  shape. CLI-SPEC §14 puts the no-op check before any package-manager command,
+  and asserting the payload alone would pass an implementation that shells out
+  first and reports `noop` afterwards.
 
 ## [1.1.13] - 2026-07-08
 

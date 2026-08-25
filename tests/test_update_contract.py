@@ -262,8 +262,19 @@ def test_skill_sync_npx_missing_surfaces_partial_not_server_error(monkeypatch):
     assert doc["error"]["retryable"] is True
 
 
-def test_idempotent_no_op_when_already_on_target():
+def test_idempotent_no_op_when_already_on_target(monkeypatch):
     # target-version equals the running version -> no-op success, no swap.
+    #
+    # The package-manager seam is stubbed to fail the test rather than to
+    # succeed quietly: CLI-SPEC §14 places the no-op check BEFORE any
+    # package-manager command, so an already-current install must never reach
+    # pip/npm at all. Asserting only the result shape would let a version that
+    # shells out first and reports "noop" afterwards pass.
+    def _must_not_run(*a, **k):
+        raise AssertionError(f"an already-current install must not run the package manager: {a}")
+
+    monkeypatch.setattr(updater, "_run_package_manager_install", _must_not_run)
+
     result = _invoke(["--target-version", updater.__version__])
     assert result.exit_code == 0, result.output
     data = _doc(result)["data"]
