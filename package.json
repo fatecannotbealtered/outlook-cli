@@ -1,6 +1,6 @@
 {
   "name": "@fateforge/outlook-cli",
-  "version": "1.1.13",
+  "version": "1.1.14",
   "description": "Outlook Exchange CLI for AI Agents - manage mail, calendar, folders, rules, contacts, rooms, OOF, and meeting responses",
   "keywords": [
     "outlook",
@@ -32,12 +32,12 @@
     "check-version": "node scripts/check-version.js"
   },
   "optionalDependencies": {
-    "@fateforge/outlook-cli-darwin-arm64": "1.1.13",
-    "@fateforge/outlook-cli-darwin-x64": "1.1.13",
-    "@fateforge/outlook-cli-linux-arm64": "1.1.13",
-    "@fateforge/outlook-cli-linux-x64": "1.1.13",
-    "@fateforge/outlook-cli-win32-arm64": "1.1.13",
-    "@fateforge/outlook-cli-win32-x64": "1.1.13"
+    "@fateforge/outlook-cli-darwin-arm64": "1.1.14",
+    "@fateforge/outlook-cli-darwin-x64": "1.1.14",
+    "@fateforge/outlook-cli-linux-arm64": "1.1.14",
+    "@fateforge/outlook-cli-linux-x64": "1.1.14",
+    "@fateforge/outlook-cli-win32-arm64": "1.1.14",
+    "@fateforge/outlook-cli-win32-x64": "1.1.14"
   },
   "files": [
     "scripts/run.js",

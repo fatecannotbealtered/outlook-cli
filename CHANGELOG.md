@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.1.14] - 2026-08-26
+
 ### Changed
 
 - Sync the vendored spec to `ai-native-cli-spec@v1.6.0` (from v1.4). SEC-SPEC §5
